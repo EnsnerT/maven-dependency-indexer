@@ -31,7 +31,7 @@ import java.util.Set;
 import java.util.StringJoiner;
 
 
-@Named // makes the class integrate into the plexus lifecycle
+@Named /// makes the class integrate into the plexus lifecycle
 public final class AnalyzerApp implements App
 {
 
@@ -188,14 +188,14 @@ public final class AnalyzerApp implements App
 	{
 		PrintStream output = System.out;
 		output.println("Usage: ");
-		// todo te - tell what the format for : {artifact} is!
+
 		if (runningParameter.mode == Params.Mode.HELP)
 		{
 			output.println("\t-h | help | * Show this help");
 			output.println("\tindex -h | index help | * index an artifact");
 			output.println("\tversion -h | version help | * show versions of an artifact");
 			output.println("\trange -h | range help | * resolve and index a range of versions for an artifact");
-			output.println("\tfind -h | find help | * scrape your indexed database for a dependency matrix");
+			output.println("\tfind -h | find help | * scrape your indexed database to create a Version matrix");
 		}
 		if (runningParameter.mode == Params.Mode.INDEX)
 		{
@@ -208,6 +208,9 @@ public final class AnalyzerApp implements App
 			output.println("\tindex {artifact+version} --release / --releases / -r | include release versions (only with -s -r)");
 			output.println("\t * you could remember the arguments as \"sonar\" Shapshot, Old, New, All, Release");
 			output.println("\tindex {artifact+version} {...} version {...} | will turn the command from an 'index' to an 'version'.");
+			output.println("Formats:");
+			output.println("\t{artifact} = {groupId}:{artifactId} - Example: 'com.any:alpha'");
+			output.println("\t{artifact+version} = {groupId}:{artifactId}:{version} - Example: 'com.any:alpha:1.0.0'");
 		}
 
 		if (runningParameter.mode == Params.Mode.VERSION)
@@ -220,6 +223,9 @@ public final class AnalyzerApp implements App
 			output.println("\tversion {artifact+version} --release / --releases / -r | include release versions (only with -s -r)");
 			output.println("\t * you could remember the arguments as \"sonar\" Shapshot, Old, New, All, Release");
 			output.println("\tversion {artifact+version} {...} index {...} | will turn the command from an 'version' to an 'index'.");
+			output.println("Formats:");
+			output.println("\t{artifact} = {groupId}:{artifactId} - Example: 'com.any:alpha'");
+			output.println("\t{artifact+version} = {groupId}:{artifactId}:{version} - Example: 'com.any:alpha:1.0.0'");
 		}
 
 		if (runningParameter.mode == Params.Mode.RANGE)
@@ -229,9 +235,14 @@ public final class AnalyzerApp implements App
 
 		if (runningParameter.mode == Params.Mode.FIND)
 		{
-			output.println("\tfind {artifact} | show all indexes by given key");
-			output.println("\tfind {artifact_A} {artifact_B} | show all indexes by given key");
-			output.println(" * this command is not yet fully implemented! ");
+			output.println("\tfind {artifact*} | show all indexes by given key");
+			output.println("\tfind {artifact} {artifact} | show intersecting versions of given artifacts");
+			output.println("\tfind {artifact} {artifact} -a | show all versions of given artifacts");
+			output.println("\tfind {artifact} {artifact+version} -a | search for a specific version of an artifact");
+			output.println("Formats:");
+			output.println("\t{artifact} = {groupId}:{artifactId} - Example: 'com.any:alpha'");
+			output.println("\t{artifact*} = *:{artifactId} - Example: '*:alpha'");
+			output.println("\t{artifact+version} = {groupId}:{artifactId}:{version} - Example: 'com.any:alpha:1.0.0'");
 		}
 	}
 
