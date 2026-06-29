@@ -1,0 +1,8 @@
+# Runnable and Index
+*.csv
+*.bat
+
+# Build Output
+/target/
+/.idea/
+/.vscode/
