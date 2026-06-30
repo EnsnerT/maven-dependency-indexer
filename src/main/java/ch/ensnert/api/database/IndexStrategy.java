@@ -4,6 +4,9 @@ import java.util.Collection;
 import java.util.List;
 
 
+/**
+ * Created by AI
+ */
 public interface IndexStrategy<T>
 {
 	void rebuildIndex(Collection<T> records);

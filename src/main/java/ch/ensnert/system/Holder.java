@@ -23,11 +23,15 @@ import java.util.ArrayList;
 import java.util.List;
 
 
+/**
+ * Plexus Managed Instances holder
+ *
+ * @author ensnerT (2026) - no AI was used
+ */
 @Named()
 @Singleton()
 public final class Holder
 {
-
 	private RepositorySystem repositorySystem;
 	private RemoteRepositoryManager repositoryManager;
 	private DefaultModelBuilder modelBuilder;

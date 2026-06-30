@@ -6,6 +6,9 @@ import org.eclipse.aether.version.Version;
 import org.eclipse.aether.version.VersionRange;
 
 
+/**
+ * @author ensnerT (2026) - no AI was used
+ */
 public final class VersionComparator
 {
 	VersionComparator()
@@ -46,9 +49,7 @@ public final class VersionComparator
 	 * 1.0.0 vs 1.0.0 == 3 <br/>
 	 * 1.0.0.0 vs 1.0.0.0 == 4 (no changes, the index is bigger than the amount of "." or version places) <br/>
 	 *
-	 * @param base
-	 * @param comp
-	 * @return
+	 * @return first changed index of split '.' (0 to {amount of '.'+1}), if 100% the same, returns {amount of '.' + 2}
 	 */
 	public static int changedLevel(String base, String comp)
 	{

@@ -44,6 +44,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 
+/**
+ * @author ensnerT (2026) - AI was used for Class Research of "org.eclipse.aether.*" and "org.apache.maven.artifact.*" and "org.apache.maven.model.*"
+ */
 public final class Pom
 {
 	private final Holder holder;
@@ -268,6 +271,7 @@ public final class Pom
 		return this.model;
 	}
 
+	@SuppressWarnings("unused") // intended for future ; incomplete
 	public HashMap<Version, Model> resolveVersionRangeOffline()
 	{
 		List<String> versions = findVersions(true, false);
@@ -289,7 +293,7 @@ public final class Pom
 		return result;
 	}
 
-	@Deprecated
+	@SuppressWarnings("unused") // intended for future ; incomplete
 	public void resolveVersionRangesOnline()
 	{
 		VersionRangeRequest request = new VersionRangeRequest(
@@ -301,7 +305,7 @@ public final class Pom
 			VersionRangeResult result = holder.getRepositorySystem().resolveVersionRange(holder.getRepositorySystemSession(), request);
 			for (Version v : result.getVersions())
 			{
-				System.out.println(" - " + v.toString());
+				Output.verbose(" - " + v.toString());
 			}
 		}
 		catch (VersionRangeResolutionException e)
@@ -349,7 +353,7 @@ public final class Pom
 
 			if (results == null || results.isEmpty())
 			{
-				System.err.println("No metadata found for:" + metadataRequest.toString());
+				Output.error("No metadata found for:" + metadataRequest.toString());
 				return new ArrayList<>();
 			}
 
@@ -361,8 +365,7 @@ public final class Pom
 
 				if (exception != null)
 				{
-					System.out.println("Error!");
-					System.err.println(exception.getMessage());
+					Output.error(exception.getLocalizedMessage());
 					continue;
 				}
 
@@ -372,7 +375,7 @@ public final class Pom
 				}
 				catch (IOException | XmlPullParserException e)
 				{
-					e.printStackTrace(System.err);
+					Output.error(e.getLocalizedMessage());
 				}
 			}
 

@@ -109,7 +109,6 @@ public final class Table
 	{
 		public String render(Table t, OutlineType chosen)
 		{
-
 			if (!this.supportings.contains(chosen))
 				throw new IllegalArgumentException(chosen.name() + " is not supported!");
 
@@ -276,8 +275,7 @@ public final class Table
 			TOP(1 << 0),
 			BOTTOM(1 << 1),
 			LEFT(1 << 2),
-			RIGHT(1 << 3),
-			;
+			RIGHT(1 << 3);
 
 			final int i;
 
@@ -322,6 +320,7 @@ public final class Table
 		private static TableConfig SIMPLE_LINES;
 		private static TableConfig DOUBLE_LINES;
 		private static TableConfig ASCII_LINES;
+		private static TableConfig TAB_STOPS;
 
 		HashMap<Integer, String> mapping;
 		HashSet<OutlineType> supportings;
@@ -405,6 +404,17 @@ public final class Table
 			}
 
 			return ASCII_LINES;
+		}
+
+		public static TableConfig TAB_STOPS()
+		{
+			if (TAB_STOPS == null)
+			{
+				TAB_STOPS = new TableConfig(false, OutlineType.COLUMNS)
+									.add("\t", Directions.LEFT, Directions.RIGHT)
+									.add("\t", Directions.TOP, Directions.BOTTOM);
+			}
+			return TAB_STOPS;
 		}
 	}
 

@@ -11,6 +11,9 @@ import java.util.List;
 import java.util.Map;
 
 
+/**
+ * Created by AI - Modified by ensnerT
+ */
 public final class MavenCoordinateIndex implements IndexStrategy<DependencyData>
 {
 	private final Map<String, List<DependencyData>> index = new HashMap<>();
@@ -36,23 +39,14 @@ public final class MavenCoordinateIndex implements IndexStrategy<DependencyData>
 	}
 
 	/**
-	 * // * @return "g:a:t:c:v"
-	 *
 	 * @return "g:a:c:v"
 	 */
 	@Override
 	public String createKey(DependencyData r)
 	{
-		// Generiert standardisiert: groupId:artifactId:type:classifier:version
 		String classifier = (r.classifier() == null || r.classifier().isBlank()) ? "" : r.classifier();
 		return String.format("%s:%s:%s:%s", r.groupId(), r.artifactId(), classifier, r.version());
 	}
-	// private String createKey(DependencyData r) {
-	// 	// Generiert standardisiert: groupId:artifactId:type:classifier:version
-	// 	String type = (r.type() == null || r.type().isBlank()) ? "" : r.type();
-	// 	String classifier = (r.classifier() == null || r.classifier().isBlank()) ? "" : r.classifier();
-	// 	return String.format("%s:%s:%s:%s:%s", r.groupId(), r.artifactId(), type, classifier, r.version());
-	// }
 
 	/**
 	 * @param key "g:a:v" | "g:a:c:v"
@@ -63,16 +57,6 @@ public final class MavenCoordinateIndex implements IndexStrategy<DependencyData>
 		if (parts.length == 3) { // g:a:v -> g:a::v
 			return parts[0] + ":" + parts[1] + "::" + parts[2];
 		}
-		return key; // Bereits im Format g:a:c:v
+		return key;
 	}
-	// private String normalizeKey(String key) {
-	// 	String[] parts = key.split(":");
-	// 	if (parts.length == 3) { // g:a:v -> g:a:::v
-	// 		return parts[0] + ":" + parts[1] + ":::" + parts[2];
-	// 	} else if (parts.length == 4) { // g:a:t:v -> g:a:t::v
-	// 		return parts[0] + ":" + parts[1] + ":" + parts[2] + "::" + parts[3];
-	// 	}
-	// 	return key; // Bereits im Format g:a:t:c:v
-	// }
-
 }

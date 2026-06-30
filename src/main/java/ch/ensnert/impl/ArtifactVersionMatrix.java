@@ -6,7 +6,6 @@ import ch.ensnert.impl.data.LinkKey;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -14,6 +13,8 @@ import java.util.Set;
 
 /**
  * Node : an Artifact Key or an Dependency Key. (can be both) <br/>
+ *
+ * @author ensnerT (2026) - no AI was used
  */
 public final class ArtifactVersionMatrix
 {
@@ -56,8 +57,38 @@ public final class ArtifactVersionMatrix
 		}
 	}
 
+	/**
+	 * Asumption: the versions are added by groups of "source".
+	 *
+	 * @param source
+	 * @param sourceVersion
+	 * @param target
+	 * @param targetVersion
+	 */
 	public void addVersion(String source, String sourceVersion, String target, String targetVersion)
 	{
+		/**
+		 * todo
+		 *  problem:
+		 *   Version A:1-3 uses B:1, this currently is only displayed as A:3 uses B:1 since B:1 is a backwards reference key.
+		 *  idea:
+		 *   If the versions added is by group, you can tell each Artifact distinct while the Dependencies are Dupplicates (lists of indexes)
+		 *   therefore inserting for dependency of a version, the index list needs to be expanded and then each item will be inserted.
+		 *  for addition:
+		 *   If the artifact is not yet existing, but the dependency is, check if that dependency has the current artifact already set.
+		 *   If it does, copy the whole entry and overwrite the current artifact. Also modify the indexes refering to the OLD entry to also point to the current, except if the key is the current artifact.
+		 *  for merging: if there is a entry above and below who have multiple links: copy from both sides
+		 *   example: A1 [1-99] uses B2 [1-10] and B2[11-20] then i come as B2 [1-10] = C3[1-10] and B2[11-20] = C4[11-20]
+		 *  issue:
+		 *   can a dependenyVersion be in the same matrix twice? yes! A:1.0.0 and A:1.0.1 uses B:1.0.0
+		 *   can a artifactVersion be in the same matrix twice? yes! since B might be a dependency of artifact A andusing it in 2 different versions.
+		 *   can every line be in the same matrix twice? no! since at least one version must have changed, to be an entry.
+		 *   does every matrix line need to connect to at least 1 other node? no! it may be, that A:1.0.0 to A:1.2.9 uses B:* but higher is the version not used.
+		 *   -> currently i search for nodes that have artifact and dependency searched for, so A:1.2.10 will not be shown anymore, IF there is nothing connecting from or to A
+		 *   i could try to do 2 Lists: 1st list is intended for artifacts, 2nd list is for dependency; if a artifact matches an other artifact, it binds. if it finds a dependency, it matches. and voila, a list of dependents.
+		 *   !! new Problem : A and Z do not know eachother, yet A:1-3 uses B:1 and Z:1-4 uses B:1. How do i display that? A does not match with Z with a unique version.
+		 * */
+
 		LinkKey e = new LinkKey(source, target);
 		relations.add(e);
 
@@ -70,15 +101,26 @@ public final class ArtifactVersionMatrix
 		if (artifactIndex != null && dependencyIndex != null)
 		{
 			// 2 different indexes hit! we need to merge the instances...
-			versions.compute(artifactIndex, (index, entry) -> entry != null ? entry : new HashMap<>())
-					.putAll(Map.of(source, sourceVersion, target, targetVersion));
+			HashMap<String, String> compute = versions.compute(artifactIndex, (index, entry) -> entry != null ? entry : new HashMap<>());
+			if (!compute.getOrDefault(source, "").equals(sourceVersion) || !compute.getOrDefault(target, "").equals(targetVersion))
+			{
+				Output.verbose("WARNING! Unmatching entries found! %s:%s to %s or %s:%s to %s", source, sourceVersion,
+						compute.getOrDefault(source, sourceVersion), target, targetVersion, compute.getOrDefault(target, targetVersion));
+			}
+
+			compute.putAll(Map.of(source, sourceVersion, target, targetVersion));
 
 			mergeIndexes(artifactIndex, dependencyIndex);
 		}
 		else if (artifactIndex != null)
 		{
 			// the Artifact was found! add the Dependency as entry
-			versions.compute(artifactIndex, (index, entry) -> entry != null ? entry : new HashMap<>()).put(target, targetVersion);
+			HashMap<String, String> compute = versions.compute(artifactIndex, (index, entry) -> entry != null ? entry : new HashMap<>());
+			if (!compute.getOrDefault(target, "").isEmpty())
+			{
+				Output.verbose("WARNING A! Dupplicate entry found for %s:%s at %s",target, targetVersion, artifactKey);
+			}
+			compute.put(target, targetVersion);
 			index.put(dependencyKey, artifactIndex);
 			if (!nodes.contains(target))
 				nodes.add(target);
@@ -86,7 +128,12 @@ public final class ArtifactVersionMatrix
 		else if (dependencyIndex != null)
 		{
 			// the Dependency was found! add the Artifac as entry
-			versions.compute(dependencyIndex, (index, entry) -> entry != null ? entry : new HashMap<>()).put(source, sourceVersion);
+			HashMap<String, String> compute = versions.compute(dependencyIndex, (index, entry) -> entry != null ? entry : new HashMap<>());
+			if (!compute.getOrDefault(source, "").isEmpty())
+			{
+				Output.verbose("WARNING B! Dupplicate entry found for %s:%s at %s",source, sourceVersion, dependencyKey);
+			}
+			compute.put(source, sourceVersion);
 			index.put(artifactKey, dependencyIndex);
 			if (!nodes.contains(source))
 				nodes.add(source);

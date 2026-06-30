@@ -4,6 +4,8 @@ import ch.ensnert.App;
 import ch.ensnert.api.database.Database;
 import ch.ensnert.api.database.csv.CsvDatabase;
 import ch.ensnert.impl.ArtifactVersionMatrix;
+import ch.ensnert.impl.Output;
+import ch.ensnert.impl.data.LinkKey;
 import ch.ensnert.impl.database.indexstrategies.MavenCoordinateIndex;
 import ch.ensnert.impl.database.types.DependencyData;
 import ch.ensnert.impl.data.AnalyzedVersion;
@@ -12,16 +14,13 @@ import ch.ensnert.api.Index;
 import ch.ensnert.impl.Pom;
 import ch.ensnert.api.Table;
 import org.apache.maven.model.Dependency;
-import org.apache.maven.model.Exclusion;
 import org.apache.maven.model.Model;
-import org.apache.maven.model.io.xpp3.MavenXpp3Reader;
 
 import javax.inject.Inject;
 import javax.inject.Named;
-import java.io.FileReader;
-import java.io.PrintStream;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -31,28 +30,28 @@ import java.util.Set;
 import java.util.StringJoiner;
 
 
-@Named /// makes the class integrate into the plexus lifecycle
+/**
+ * <h2>Application Manager</h2> <br/>
+ * This class handles the whole Application. <br/>
+ * All Commands go to {@link #run(String[])}. <br/>
+ * Each type of command then splits into {@code command_{type}(Params)} to process. <br/>
+ *
+ * @author ensnerT (2026) - no AI was used
+ */
+@Named() // makes the class integrate into the plexus lifecycle
 public final class AnalyzerApp implements App
 {
+	// region Fields
 
 	public Holder holder;
-	private static Database<DependencyData> db;
+	private static CsvDatabase<DependencyData> db;
 	private static final String DB_FILE = "./db.csv";
 
-	@Inject()
-	public AnalyzerApp(Holder holder)
-	{
-		if (holder != null)
-			this.holder = holder;
-	}
+	// endregion Fields
 
-	/**
-	 * <b> Note! this main method is Gone and has been replaced with the {@link PlexusLoader} </b>
-	 */
-	public static void main(String[] args) throws Exception
-	{
+	// region Helper / Container / Classes
 
-	}
+	private record Result(List<DependencyData> matchingAsArtifact, List<DependencyData> matchingAsDependency, List<DependencyData> allMatchings) {}
 
 	public static final class Params
 	{
@@ -64,6 +63,8 @@ public final class AnalyzerApp implements App
 		public boolean version_snapshot;
 		public boolean version_release;
 		public boolean version_all;
+		public boolean table_format_tab;
+		public boolean table_nocolor;
 		public String[] originalArguments = new String[0];
 
 		public Params()
@@ -75,6 +76,8 @@ public final class AnalyzerApp implements App
 			this.version_snapshot = false;
 			this.version_release = true;
 			this.version_all = false;
+			this.table_format_tab = false;
+			this.table_nocolor = false;
 		}
 
 		public enum Mode
@@ -87,9 +90,46 @@ public final class AnalyzerApp implements App
 		}
 	}
 
-	@Override
-	public void run(String[] args) throws Exception
+	// endregion Helper / Container / Classes
+
+	@Inject()
+	public AnalyzerApp(Holder holder)
 	{
+		if (holder != null)
+			this.holder = holder;
+	}
+
+	@SuppressWarnings("SuspiciousListRemoveInLoop")
+	@Override
+	public void run(String[] args)
+	{
+		// region Shorthand Expander
+
+		/// this Area makes from '-abc' the expanded command '-a -b -c'
+		if (args != null && args.length > 0)
+		{
+			ArrayList<String> preArgs = new ArrayList<>(args.length);
+			preArgs.addAll(Arrays.asList(args));
+
+			for (int i = 0; i < preArgs.size(); i++)
+			{
+				String s = preArgs.get(i);
+				/// is '-ab' or longer but not '--ab' or 'ab'
+				if (s.startsWith("-") && !s.startsWith("--") && s.length() > 2)
+				{
+					preArgs.remove(i); /// remove self, then add the others back
+
+					for (char c : s.toCharArray())
+						if ('a' <= c && c <= 'z' || 'A' <= c && c <= 'Z')
+							preArgs.add(i, "-" + c);
+				}
+			}
+			args = preArgs.toArray(String[]::new);
+		}
+
+		// endregion Shorthand Expander
+
+		// region Parameter Parser
 		Params runningParameter = new Params();
 
 		if (args != null && args.length > 0)
@@ -116,7 +156,7 @@ public final class AnalyzerApp implements App
 				{
 					runningParameter.mode = Params.Mode.FIND;
 				}
-				else if (Set.of("--version", "-v", "version", "versions").contains(arg))
+				else if (Set.of("--version", "version", "versions").contains(arg))
 				{
 					runningParameter.mode = Params.Mode.VERSION;
 				}
@@ -145,6 +185,18 @@ public final class AnalyzerApp implements App
 				{
 					runningParameter.moreThenNEntries = true;
 				}
+				else if (Set.of("--verbose", "-v").contains(arg))
+				{
+					Output.setVerbose(true);
+				}
+				else if (Set.of("--tab", "-t").contains(arg))
+				{
+					runningParameter.table_format_tab = true;
+				}
+				else if (Set.of("--no-color", "--no-colour", "-c").contains(arg))
+				{
+					runningParameter.table_nocolor = true;
+				}
 				else if (arg.contains(":"))
 				{
 					runningParameter.coordinates.add(arg);
@@ -157,6 +209,8 @@ public final class AnalyzerApp implements App
 			command_help(runningParameter);
 			return;
 		}
+
+		// endregion Parameter Parser
 
 		switch (runningParameter.mode)
 		{
@@ -184,65 +238,69 @@ public final class AnalyzerApp implements App
 
 	}
 
+	// region Commands
+
 	public void command_help(Params runningParameter)
 	{
-		PrintStream output = System.out;
-		output.println("Usage: ");
+		Output.generic("Usage: ");
 
 		if (runningParameter.mode == Params.Mode.HELP)
 		{
-			output.println("\t-h | help | * Show this help");
-			output.println("\tindex -h | index help | * index an artifact");
-			output.println("\tversion -h | version help | * show versions of an artifact");
-			output.println("\trange -h | range help | * resolve and index a range of versions for an artifact");
-			output.println("\tfind -h | find help | * scrape your indexed database to create a Version matrix");
+			Output.generic("\t-h | help | * Show this help");
+			Output.generic("\tindex -h | index help | * index an artifact");
+			Output.generic("\tversion -h | version help | * show versions of an artifact");
+			Output.generic("\trange -h | range help | * resolve and index a range of versions for an artifact");
+			Output.generic("\tfind -h | find help | * scrape your indexed database to create a Version matrix");
+			Output.generic("Generic Paramters: ");
+			Output.generic("\t-t / --tab | * change the Table's formats to '\\t' separated");
+			Output.generic("\t-v / --verbose | * Output more Context");
+			Output.generic("\t-c / --no-color / --no-colour | * prevent colorfull Output");
 		}
 		if (runningParameter.mode == Params.Mode.INDEX)
 		{
-			output.println("\tindex {artifact+version} | index a certain version of the artifact");
-			output.println("\tindex {artifact+version} --all / -a | use all versions, not just the \"recommended\" (only with --new or --old)");
-			output.println(
-					"\tindex {artifact+version} --new / -n | \"recommended\" the newest patches for each generation (like x.y.z the x.y is the generation)");
-			output.println("\tindex {artifact+version} --old / -o | \"recommended\" the best patches before the {version} for each generation");
-			output.println("\tindex {artifact+version} --shapshot / --snapshots / -s | only snapshots in the versions ; overwrites release");
-			output.println("\tindex {artifact+version} --release / --releases / -r | include release versions (only with -s -r)");
-			output.println("\t * you could remember the arguments as \"sonar\" Shapshot, Old, New, All, Release");
-			output.println("\tindex {artifact+version} {...} version {...} | will turn the command from an 'index' to an 'version'.");
-			output.println("Formats:");
-			output.println("\t{artifact} = {groupId}:{artifactId} - Example: 'com.any:alpha'");
-			output.println("\t{artifact+version} = {groupId}:{artifactId}:{version} - Example: 'com.any:alpha:1.0.0'");
+			Output.generic("\tindex {artifact+version} | index a certain version of the artifact");
+			Output.generic("\tindex {artifact+version} --all / -a | use all versions, not just the \"recommended\" (only with --new or --old)");
+			Output.generic("\tindex {artifact+version} --new / -n | \"recommended\" the newest patches for each generation (x.y.z -> x.y is the generation)");
+			Output.generic("\tindex {artifact+version} --old / -o | \"recommended\" the best patches before the {version} for each generation");
+			Output.generic("\tindex {artifact+version} --shapshot / --snapshots / -s | only snapshots in the versions ; overwrites release");
+			Output.generic("\tindex {artifact+version} --release / --releases / -r | include release versions (only with -s -r)");
+			Output.generic("\t * you could remember the arguments as \"sonar\" Shapshot, Old, New, All, Release");
+			Output.generic("\tindex {artifact+version} {...} version {...} | will turn the command from an 'index' to an 'version'.");
+			Output.generic("Formats:");
+			Output.generic("\t{artifact} = {groupId}:{artifactId} - Example: 'com.any:alpha'");
+			Output.generic("\t{artifact+version} = {groupId}:{artifactId}:{version} - Example: 'com.any:alpha:1.0.0'");
 		}
 
 		if (runningParameter.mode == Params.Mode.VERSION)
 		{
-			output.println("\tversion {artifact} | show \"recommended\" versions");
-			output.println("\tversion {artifact} --all / -a | show all versions");
-			output.println("\tversion {artifact+version} --new / -n | show newer versions than {version}");
-			output.println("\tversion {artifact+version} --old / -n | show older versions than {version}");
-			output.println("\tversion {artifact+version} --shapshot / --snapshots / -s | only snapshots in the versions ; excludes releases");
-			output.println("\tversion {artifact+version} --release / --releases / -r | include release versions (only with -s -r)");
-			output.println("\t * you could remember the arguments as \"sonar\" Shapshot, Old, New, All, Release");
-			output.println("\tversion {artifact+version} {...} index {...} | will turn the command from an 'version' to an 'index'.");
-			output.println("Formats:");
-			output.println("\t{artifact} = {groupId}:{artifactId} - Example: 'com.any:alpha'");
-			output.println("\t{artifact+version} = {groupId}:{artifactId}:{version} - Example: 'com.any:alpha:1.0.0'");
+			Output.generic("\tversion {artifact} | show \"recommended\" versions");
+			Output.generic("\tversion {artifact} --all / -a | show all versions");
+			Output.generic("\tversion {artifact+version} --new / -n | show newer versions than {version}");
+			Output.generic("\tversion {artifact+version} --old / -n | show older versions than {version}");
+			Output.generic("\tversion {artifact+version} --shapshot / --snapshots / -s | only snapshots in the versions ; excludes releases");
+			Output.generic("\tversion {artifact+version} --release / --releases / -r | include release versions (only with -s -r)");
+			Output.generic("\t * you could remember the arguments as \"sonar\" Shapshot, Old, New, All, Release");
+			Output.generic("\tversion {artifact+version} {...} index {...} | will turn the command from an 'version' to an 'index'.");
+			Output.generic("Formats:");
+			Output.generic("\t{artifact} = {groupId}:{artifactId} - Example: 'com.any:alpha'");
+			Output.generic("\t{artifact+version} = {groupId}:{artifactId}:{version} - Example: 'com.any:alpha:1.0.0'");
 		}
 
 		if (runningParameter.mode == Params.Mode.RANGE)
 		{
-			output.println(" * this command is not yet implemented! ");
+			Output.generic(" * this command is not yet implemented! ");
 		}
 
 		if (runningParameter.mode == Params.Mode.FIND)
 		{
-			output.println("\tfind {artifact*} | show all indexes by given key");
-			output.println("\tfind {artifact} {artifact} | show intersecting versions of given artifacts");
-			output.println("\tfind {artifact} {artifact} -a | show all versions of given artifacts");
-			output.println("\tfind {artifact} {artifact+version} -a | search for a specific version of an artifact");
-			output.println("Formats:");
-			output.println("\t{artifact} = {groupId}:{artifactId} - Example: 'com.any:alpha'");
-			output.println("\t{artifact*} = *:{artifactId} - Example: '*:alpha'");
-			output.println("\t{artifact+version} = {groupId}:{artifactId}:{version} - Example: 'com.any:alpha:1.0.0'");
+			Output.generic("\tfind {artifact*} | show all indexes by given key");
+			Output.generic("\tfind {artifact} {artifact} | show intersecting versions of given artifacts");
+			Output.generic("\tfind {artifact} {artifact} -a | show all versions of given artifacts");
+			Output.generic("\tfind {artifact} {artifact+version} -a | search for a specific version of an artifact");
+			Output.generic("Formats:");
+			Output.generic("\t{artifact} = {groupId}:{artifactId} - Example: 'com.any:alpha'");
+			Output.generic("\t{artifact*} = *:{artifactId} - Example: '*:alpha'");
+			Output.generic("\t{artifact+version} = {groupId}:{artifactId}:{version} - Example: 'com.any:alpha:1.0.0'");
 		}
 	}
 
@@ -255,49 +313,53 @@ public final class AnalyzerApp implements App
 
 			database_init();
 
-			Pom pom = new Pom(holder, runningParameter.coordinates.get(0));
-			List<AnalyzedVersion> filteredVersions = applyParameteredFilter(runningParameter, pom);
-
-			System.out.println(pom.getCoordinate() + " -> ");
-
-			Pom indexingPom = new Pom(holder, runningParameter.coordinates.get(0));
-
-			for (AnalyzedVersion fv : filteredVersions)
+			for (String coordinate : runningParameter.coordinates)
 			{
-				StringJoiner sj = new StringJoiner(", ");
-				if (fv.isCurrent())
-					sj.add("current");
-				if (fv.isRecommended())
-					sj.add("last patch");
-				if (fv.isSnapshot() && runningParameter.version_release && runningParameter.version_snapshot)
-					sj.add("snapshot");
-				if (fv.isLatest())
-					sj.add("latest");
+				// String coordinate = runningParameter.coordinates.get(0);
+				Pom pom = new Pom(holder, coordinate);
+				List<AnalyzedVersion> filteredVersions = applyParameteredFilter(runningParameter, pom);
 
-				if (sj.length() > 0)
-					System.out.println(" - Indexing : " + fv.version() + " (" + sj.toString() + ")");
-				else
-					System.out.println(" - Indexing : " + fv.version());
+				Output.verbose(pom.getCoordinate() + " -> ");
 
+				Pom indexingPom = new Pom(holder, coordinate);
+
+				for (AnalyzedVersion fv : filteredVersions)
 				{
-					indexingPom.setArtifactVersion(fv.version());
+					StringJoiner sj = new StringJoiner(", ");
+					if (fv.isCurrent())
+						sj.add("current");
+					if (fv.isRecommended())
+						sj.add("last patch");
+					if (fv.isSnapshot() && runningParameter.version_release && runningParameter.version_snapshot)
+						sj.add("snapshot");
+					if (fv.isLatest())
+						sj.add("latest");
 
-					String key = db.createKey(indexingPom.getKey());
-					if (!db.hasKey(key))
-					{
-						Model model = indexingPom.resolveModel();
-						List<Dependency> deps = model.getDependencies();
-						Collection<DependencyData> dd = new ArrayList<>();
-
-						for (Dependency dep : deps)
-							dd.add(fromFull(model, dep));
-
-						System.out.println(" \\ - Found " + dd.size() + " dependencies.");
-						db.batchInsert(dd);
-					}
+					if (sj.length() > 0)
+						Output.generic(" - Indexing : " + fv.version() + " (" + sj.toString() + ")");
 					else
+						Output.generic(" - Indexing : " + fv.version());
+
 					{
-						System.out.println(" \\ -- Artifact Version : \"" + indexingPom.getVersion() + "\" already present in Database; Skiping indexing -- ");
+						indexingPom.setArtifactVersion(fv.version());
+
+						String key = db.createKey(indexingPom.getKey());
+						if (!db.hasKey(key))
+						{
+							Model model = indexingPom.resolveModel();
+							List<Dependency> deps = model.getDependencies();
+							Collection<DependencyData> dd = new ArrayList<>();
+
+							for (Dependency dep : deps)
+								dd.add(fromFull(model, dep));
+
+							Output.verbose(" \\ - Found " + dd.size() + " dependencies.");
+							db.batchInsert(dd);
+						}
+						else
+						{
+							Output.verbose(" \\ -- Artifact Version : \"" + indexingPom.getVersion() + "\" already present in Database; Skiping indexing -- ");
+						}
 					}
 				}
 			}
@@ -321,7 +383,7 @@ public final class AnalyzerApp implements App
 			Pom pom = new Pom(holder, runningParameter.coordinates.get(0));
 			List<AnalyzedVersion> filteredVersions = applyParameteredFilter(runningParameter, pom);
 
-			System.out.println(pom.getCoordinate() + " -> ");
+			Output.verbose(pom.getCoordinate() + " -> ");
 
 			for (AnalyzedVersion fv : filteredVersions)
 			{
@@ -336,9 +398,9 @@ public final class AnalyzerApp implements App
 					sj.add("latest");
 
 				if (sj.length() > 0)
-					System.out.println(" - " + fv.version() + " (" + sj.toString() + ")");
+					Output.generic(" - " + fv.version() + " (" + sj.toString() + ")");
 				else
-					System.out.println(" - " + fv.version());
+					Output.generic(" - " + fv.version());
 			}
 
 		}
@@ -371,19 +433,34 @@ public final class AnalyzerApp implements App
 
 				for (DependencyData data : result.matchingAsArtifact())
 				{
-					tableSimpleLookup.addCol(Table.ColoredCol.of(data.groupId() + ":" + data.artifactId(), Table.ColoredCol.LIGHT_YELLOW))
-							.addCol(Table.ColoredCol.of(data.version(), Table.ColoredCol.LIGHT_YELLOW))
-							.addCol(data.depGroupId() + ":" + data.depArtifactId())
-							.addCol(data.depVersion())
-							.endRow();
+					if (runningParameter.table_nocolor)
+					{
+						tableSimpleLookup.addCol(data.groupId() + ":" + data.artifactId());
+						tableSimpleLookup.addCol(data.version());
+					}
+					else
+					{
+						tableSimpleLookup.addCol(Table.ColoredCol.of(data.groupId() + ":" + data.artifactId(), Table.ColoredCol.LIGHT_YELLOW));
+						tableSimpleLookup.addCol(Table.ColoredCol.of(data.version(), Table.ColoredCol.LIGHT_YELLOW));
+					}
+
+					tableSimpleLookup.addCol(data.depGroupId() + ":" + data.depArtifactId()).addCol(data.depVersion()).endRow();
 				}
 				for (DependencyData data : result.matchingAsDependency())
 				{
-					tableSimpleLookup.addCol(data.groupId() + ":" + data.artifactId())
-							.addCol(data.version())
-							.addCol(Table.ColoredCol.of(data.depGroupId() + ":" + data.depArtifactId(), Table.ColoredCol.LIGHT_YELLOW))
-							.addCol(Table.ColoredCol.of(data.depVersion(), Table.ColoredCol.LIGHT_YELLOW))
-							.endRow();
+					tableSimpleLookup.addCol(data.groupId() + ":" + data.artifactId()).addCol(data.version());
+
+					if (runningParameter.table_nocolor)
+					{
+						tableSimpleLookup.addCol(data.depGroupId() + ":" + data.depArtifactId());
+						tableSimpleLookup.addCol(data.depVersion());
+					}
+					else
+					{
+						tableSimpleLookup.addCol(Table.ColoredCol.of(data.depGroupId() + ":" + data.depArtifactId(), Table.ColoredCol.LIGHT_YELLOW));
+						tableSimpleLookup.addCol(Table.ColoredCol.of(data.depVersion(), Table.ColoredCol.LIGHT_YELLOW));
+					}
+					tableSimpleLookup.endRow();
 				}
 			}
 			catch (Exception e)
@@ -391,7 +468,7 @@ public final class AnalyzerApp implements App
 				throw new RuntimeException(e);
 			}
 
-			System.out.println(Table.TableConfig.SIMPLE_LINES().render(tableSimpleLookup, Table.TableConfig.OutlineType.FULL));
+			printTable(tableSimpleLookup, runningParameter, true);
 		}
 		else if (runningParameter.coordinates.size() > 1)
 		{
@@ -399,7 +476,7 @@ public final class AnalyzerApp implements App
 			{
 				if (coordinate.contains("*"))
 				{
-					System.err.println("For Matrix search, you can not use a wildcard coordinate!");
+					Output.error("For Matrix search, you can not use a wildcard coordinate!");
 					return;
 				}
 			}
@@ -442,9 +519,6 @@ public final class AnalyzerApp implements App
 
 						if (!intersections.isEmpty())
 						{
-							// add a relation between the two coordinate
-							relations.add(new Index(coordinateA, coordinateB)); // todo te - this relation might not be in the correct order!
-
 							for (DependencyData data : intersections)
 							{
 								matrix.addVersion(data.groupId() + ":" + data.artifactId(), data.version(), data.depGroupId() + ":" + data.depArtifactId(),
@@ -454,30 +528,30 @@ public final class AnalyzerApp implements App
 					}
 
 					/// DEBUG : Preview All Dependencies
-					if (false)
+					if (Set.of(runningParameter.originalArguments).contains("---findings"))
 					{
-						System.out.println(" - " + coordinateA + " has found:");
-						printResult(new Result(previewAllNodes, new ArrayList<>(), previewAllNodes));
+						Output.verbose(" - " + coordinateA + " has found:");
+						printResult(new Result(previewAllNodes, new ArrayList<>(), previewAllNodes), runningParameter);
 					}
 				}
 
-
-				/// References ( Bonds )
-				if (false)
+				// region References ( Bonds ) '---bonds -v'
+				if (Set.of(runningParameter.originalArguments).contains("---bonds") && Output.isVerbose())
 				{
 					Table f1 = new Table(2);
 					f1.setName(Table.Col.of("Bonds").setAlign(Table.Align.CENTER));
 					f1.addCol("Artifact").addCol("Dependency").endRow();
 
-					for (Index referenceKey : relations)
+					for (LinkKey referenceKey : matrix.getRelations())
 					{
-						Serializable[] cache = referenceKey.cache();
+						Serializable[] cache = referenceKey.asIndex().cache();
 						String key = cache[0].toString();
 						String value = cache[1].toString();
 						f1.addCol(key).addCol(value).endRow();
 					}
-					System.out.println(Table.TableConfig.SIMPLE_LINES().render(f1, Table.TableConfig.OutlineType.FULL));
+					printTable(f1, runningParameter, false);
 				}
+				// endregion References ( Bonds ) '---bonds'
 
 				/// second iteration of "-a" (now can choose between them)
 				// if (false)
@@ -485,16 +559,20 @@ public final class AnalyzerApp implements App
 					String[][] strings = matrix.makeView(runningParameter.version_all);
 					Table f3 = new Table(strings[0].length);
 					boolean firstRow = true;
-					row:
+
 					for (String[] string : strings)
 					{
 						boolean isColored = !firstRow;
 						for (String s : string)
 							if (s.isEmpty())
+							{
 								isColored = false; /// mark a full entry as {colored}
+								break;
+							}
 
 						for (String entry : string)
-							if (isColored && runningParameter.version_all) /// only color the row, if it is "-a" and {colored}
+							if (isColored && runningParameter.version_all && !runningParameter.table_nocolor)
+							/// only color the row, if  {colored} and '-a' and !'-c'
 								f3.addCol(Table.ColoredCol.of(entry, Table.ColoredCol.LIGHT_GREEN));
 							else
 								f3.addCol(entry); /// otherwise keep it plain
@@ -502,7 +580,7 @@ public final class AnalyzerApp implements App
 						f3.endRow();
 						firstRow = false;
 					}
-					System.out.println(Table.TableConfig.SIMPLE_LINES().render(f3, Table.TableConfig.OutlineType.FULL));
+					printTable(f3, runningParameter, true);
 				}
 
 			}
@@ -510,22 +588,32 @@ public final class AnalyzerApp implements App
 			{
 				throw new RuntimeException(e);
 			}
-
 		}
-
-		// for a 2 instance table, you just search every entry, that matches **both**.
-		// example: `find com.azure:azure-core com.azure:azure-identity` -> azure-identity && azure-core as dep
-
-		// for >= 3 entries you make a column for each Artifact, if the artifact matches with another artifact, paint it yellow, if all of them match, paint it green.
-		// example: `find com.azure:azure-core com.azure:azure-core-http-netty com.azure:azure-identity` should find:
-		// - azure core as dep 1.58.1
-		// - azure identity as artifact 1.18.4
-		// - azure core netty as artifact 1.16.5
-
-		// throw new UnsupportedOperationException("Command not yet implemented");
 	}
 
-	private static void printResult(Result value)
+	// endregion Commands
+
+	// region Utility Methods
+
+	private static void printTable(Table table, Params runningParameter, boolean isGeneric)
+	{
+		String render;
+		if (runningParameter.table_format_tab)
+			render = Table.TableConfig.TAB_STOPS().render(table, Table.TableConfig.OutlineType.COLUMNS);
+		else
+			render = Table.TableConfig.SIMPLE_LINES().render(table, Table.TableConfig.OutlineType.FULL);
+
+		// '\n' put into println will make 2 lines ; here we prevent this
+		if (render.charAt(render.length() - 1) == '\n') // todo - OS dependent
+			render = render.substring(0, render.length() - 1);
+
+		if (isGeneric)
+			Output.verbose(render);
+		else
+			Output.generic(render);
+	}
+
+	private static void printResult(Result value, Params runningParameter)
 	{
 		if (!value.matchingAsArtifact().isEmpty())
 		{
@@ -540,7 +628,7 @@ public final class AnalyzerApp implements App
 						.addCol(data.depVersion())
 						.endRow();
 			}
-			System.out.println(Table.TableConfig.SIMPLE_LINES().render(f1, Table.TableConfig.OutlineType.FULL));
+			printTable(f1, runningParameter, false);
 		}
 		if (!value.matchingAsDependency().isEmpty())
 		{
@@ -555,7 +643,7 @@ public final class AnalyzerApp implements App
 						.addCol(data.depVersion())
 						.endRow();
 			}
-			System.out.println(Table.TableConfig.SIMPLE_LINES().render(f1, Table.TableConfig.OutlineType.FULL));
+			printTable(f1, runningParameter, false);
 		}
 	}
 
@@ -647,204 +735,9 @@ public final class AnalyzerApp implements App
 		return filteredVersions;
 	}
 
-	private record Result(List<DependencyData> matchingAsArtifact, List<DependencyData> matchingAsDependency, List<DependencyData> allMatchings) {}
+	// endregion Utility Methods
 
-	// public void inst(String[] args) throws Exception
-	/* {
-		String coordinate = null;
-
-		if (args != null && args.length > 0)
-		{
-			int i = 0;
-
-			// region Test
-			if (args[i].equals("test"))
-			{
-				Test.main(Arrays.copyOfRange(args, ++i, args.length));
-				return;
-			}
-			// endregion Test
-
-			// region CLI Parser
-			while (i < args.length)
-			{
-				if (args[i].equals("-h") || args[i].equals("-?") || args[i].equals("--help") || args[i].equals("--?"))
-				{
-					System.out.println("Usage: ");
-					System.out.println(" - Single Scan | `<groupId>:<artifactId>:<version>` to add a Complete Version to the Database.");
-					System.out.println(" - Range Scan  |`-r <groupId>:<artifactId>:<versionRange>` to add a Complete Range of Version to the Database.");
-					System.out.println(" - Range Scan  | `--range <groupId>:<artifactId>:<versionRange>`");
-					System.out.println(" - Sniffing    | `-l <groupId>:<artifactId>` Lookup Versions for specifed Group and Artifacts");
-					System.out.println(" - Sniffing    | `-v <groupId>:<artifactId>`");
-					System.out.println(" - Sniffing    | `--list <groupId>:<artifactId>`");
-					System.out.println(" - Sniffing & Range Scan | `-s` also map Snapshots");
-					System.out.println(" - *           | `-n` do not add entry to the Database.");
-					return;
-				}
-				else if (args[i].equals("-r") || args[i].equals("--range"))
-				{
-					// n <= x  `[n,)`
-					// n <= x < m  `[n,m)`
-					Params.mode = Params.Mode.SCAN_RANGE;
-				}
-				else if (args[i].equals("-l") || args[i].equals("-v") || args[i].equals("--list"))
-				{
-					Params.mode = Params.Mode.SNIFF;
-				}
-				else if (args[i].equals("-s"))
-				{
-					Params.withSnapshot = true;
-				}
-				else if (args[i].equals("--yes"))
-				{
-					Params.didConfirm = true;
-				}
-				else if (args[i].contains(":"))
-				{
-					coordinate = args[i];
-				}
-				i++;
-			}
-			// endregion CLI Parser
-		}
-
-		if (coordinate == null)
-		{
-			throw new RuntimeException("Please specify a coordinate for operation, or use -h or -? for a list of operations!");
-		}
-
-		switch (Params.mode)
-		{
-			case SCAN:
-			{
-				database_init();
-				Pom pom = new Pom(holder, coordinate);
-
-				String key = db.createKey(pom.getKey());
-				System.out.println(key + ":");
-				if (!db.hasKey(key))
-				{
-
-					Model model = pom.getPom();
-					List<Dependency> deps = model.getDependencies();
-					Collection<DependencyData> dd = new ArrayList<>();
-					for (Dependency dep : deps)
-					{
-						DependencyData data = new DependencyData(model.getGroupId(), model.getArtifactId(), model.getPackaging(), "", model.getVersion(),
-								dep.getGroupId(), dep.getArtifactId(), dep.getType(), dep.getClassifier(), dep.getScope(), dep.getVersion(), dep.getOptional(),
-								String.join(".", dep.getExclusions().stream().map(Main::getKey).toList()));
-
-						System.out.println(" - " + getDependencyKey(data));
-
-						dd.add(data);
-					}
-					db.batchInsert(dd);
-
-					database_save();
-				}
-				else
-				{
-					System.out.println(" -- Loaded through Cache DB -- ");
-					List<DependencyData> entries = db.getByKey(key);
-
-					for (DependencyData dd : entries)
-					{
-						System.out.println(" - " + getDependencyKey(dd));
-					}
-				}
-				// exit
-			}
-			break;
-			case SCAN_RANGE:
-			{
-				// database_init();
-				Pom pom = new Pom(holder, coordinate);
-				pom.resolveVersionRangesOnline();
-			}
-			break;
-			case SNIFF:
-			{
-				Pom pom = new Pom(holder, coordinate);
-				List<String> versions = pom.findVersions();
-
-				List<String> latestVersions = pom.getLatestVersions();
-				String latestVersion = pom.getLatestVersion();
-				String currentVersion = pom.getVersion();
-
-				int olderVersionCount = 0;
-				ArrayList<String> recommended = new ArrayList<>();
-				for (String version : versions)
-				{
-					boolean isCurrentVersion = VersionComparator.isSame(currentVersion, version);
-					boolean isSameOrNewer = VersionComparator.isSameOrNewer(currentVersion, version);
-					boolean isLatestPatch = latestVersions.contains(version);
-					boolean isNewest = VersionComparator.isSame(latestVersion, version);
-
-					StringJoiner tags = new StringJoiner(", ");
-					if (isCurrentVersion)
-						tags.add("current");
-					if (isLatestPatch)
-					{
-						recommended.add(version);
-						tags.add("recommended");
-					}
-					if (isNewest)
-						tags.add("latest");
-
-					if (!isSameOrNewer)
-					{
-						olderVersionCount++;
-						continue;
-					}
-
-					if (isCurrentVersion)
-						System.out.println(" = Skipped " + olderVersionCount + " Older Versions =");
-
-					System.out.println(" - " + version + (tags.length() > 0 ? (" (" + tags + ")") : "")); // - <version> | - <version> (<tags>)
-				}
-				if (!Params.didConfirm)
-				{
-					System.out.println(" Found " + recommended.size() + " Recommendations!");
-					System.out.println(" " + String.join(" / ", recommended));
-					System.out.println(" ");
-					System.out.println(" To Index all Recommendations, use the same command and append '--yes'.");
-					break;
-				}
-				System.out.println(" ============ Indexing " + recommended.size() + " Recommendations ============ ");
-
-				database_init();
-				ArrayList<DependencyData> batchInsert = new ArrayList<>();
-				for (String recVersion : recommended)
-				{
-					pom.setArtifactVersion(recVersion);
-
-					String key = db.createKey(pom.getKey());
-					// System.out.println("[Debug] Checking key -> " + key + " for version " + recVersion);
-					if (!db.hasKey(key))
-					{
-						System.out.println("[Info] Loading '" + key + "'!");
-						Model model = pom.getPom();
-
-						for (Dependency dep : model.getDependencies())
-						{
-							DependencyData data = fromFull(model, dep);
-							batchInsert.add(data);
-						}
-					}
-					else
-					{
-						System.out.println("[Info] Skipping Recommendations " + key + " due to index already exists!");
-					}
-				}
-
-				System.out.println("[Info] Inserting Recommendations of " + batchInsert.size() + " Direct Dependencies!");
-				db.batchInsert(batchInsert);
-
-				database_save();
-			}
-			break;
-		}
-	} */
+	// region Database
 
 	private static void database_init() throws Exception
 	{
@@ -860,63 +753,28 @@ public final class AnalyzerApp implements App
 
 	public static DependencyData fromFull(Model model, Dependency dep)
 	{
-		return new DependencyData(model.getGroupId(), model.getArtifactId(), model.getPackaging(), "", model.getVersion(), dep.getGroupId(),
-				dep.getArtifactId(), dep.getType(), dep.getClassifier(), dep.getScope(), dep.getVersion(), dep.getOptional(),
-				String.join(".", dep.getExclusions().stream().map(AnalyzerApp::getKey).toList()));
+		// @formatter:off
+		return new DependencyData(
+				model.getGroupId(),
+				model.getArtifactId(),
+				model.getPackaging(),
+				"",
+				model.getVersion(),
+				dep.getGroupId(),
+				dep.getArtifactId(),
+				dep.getType(),
+				dep.getClassifier(),
+				dep.getScope(),
+				dep.getVersion(),
+				dep.getOptional(),
+				String.join(".",
+						dep.getExclusions().stream().map(
+								exclusion -> exclusion.getGroupId() + ":" + exclusion.getArtifactId()
+						).toList())
+		);
+		// @formatter:on
 	}
 
-	public static String getKey(Dependency dependency)
-	{
-		String out = "";
-		out += dependency.getGroupId() + ":" + dependency.getArtifactId();
+	// endregion Database
 
-		if (dependency.getType() != null)
-		{
-			out += ":" + dependency.getType();
-			if (dependency.getClassifier() != null)
-			{
-				out += ":" + dependency.getClassifier();
-			}
-		}
-
-		out += ":" + dependency.getVersion();
-		return out;
-	}
-
-	public static String getDependencyKey(DependencyData dependency)
-	{
-		String out = "";
-		out += dependency.depGroupId() + ":" + dependency.depArtifactId();
-
-		if (dependency.depType() != null)
-		{
-			out += ":" + dependency.depType();
-			if (dependency.depClassifier() != null)
-			{
-				out += ":" + dependency.depClassifier();
-			}
-		}
-
-		out += ":" + dependency.depVersion();
-		return out;
-	}
-
-	public static String getKey(Exclusion dependency)
-	{
-		return dependency.getGroupId() + ":" + dependency.getArtifactId();
-	}
-
-	@Deprecated
-	public static void getVersion(String pom, String id) throws Exception
-	{
-		FileReader reader = new FileReader(pom);
-
-		MavenXpp3Reader xpp3Reader = new MavenXpp3Reader();
-		Model model = xpp3Reader.read(reader);
-
-		for (Dependency dep : model.getDependencies())
-		{
-			System.out.println(dep.getGroupId() + ":" + dep.getArtifactId() + ":" + dep.getVersion() + " (" + dep.getClassifier() + "," + dep.getScope() + ")");
-		}
-	}
 }

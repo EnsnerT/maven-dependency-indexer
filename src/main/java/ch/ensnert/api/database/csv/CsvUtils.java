@@ -2,17 +2,19 @@ package ch.ensnert.api.database.csv;
 
 import ch.ensnert.api.database.Column;
 import ch.ensnert.api.database.IndexStrategy;
+import ch.ensnert.impl.Output;
 
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.RecordComponent;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -29,66 +31,43 @@ public final class CsvUtils
 	{
 	}
 
-	public static List<String> generateHeader(Class<?> clazz)
+	/**
+	 * @param filePath Path to the Database File (existence: optional)
+	 * @param separator CSV Column Seperator
+	 * @param type Class reference to T (constructable)
+	 * @param indexer Instance of an Indexer
+	 * @param <T> Type of the output Object
+	 * @return list of loaded Objects 'T' or an empty list, if the file does not exist or is empty
+	 * @throws IOException thrown, when issues with the database file arise
+	 * @throws InvocationTargetException thrown, if issues arise when constructing 'T'
+	 * @throws InstantiationException thrown, if 'T' is an abstract class
+	 * @throws IllegalAccessException thrown, if the constructor is non-public
+	 * @throws ClassCastException thrown, if the constructor is not creating 'T' (one must show me an instance, where this is not the case!)
+	 */
+	@SuppressWarnings("unchecked")
+	public static <T> List<T> load(String filePath, String separator, Class<T> type, IndexStrategy<T> indexer)
+			throws IOException, InvocationTargetException, InstantiationException, IllegalAccessException, ClassCastException
 	{
-		HashMap<Integer, String> name = new HashMap<>();
-		// HashMap<Integer, String> index = new HashMap<>();
-		AnnotatedElement[] elements;
+		// * Check if File Exists
+		Path path = Paths.get(filePath);
+		if (!path.toFile().exists())
+			return new ArrayList<>();
 
-		if (clazz.isRecord())
-		{
-			elements = clazz.getConstructors()[0].getParameters();
-		}
-		else
-		{
-			elements = clazz.getMethods();
-		}
+		// * Check if File has any Content
+		List<String> lines = Files.readAllLines(path, Charset.defaultCharset());
+		if (lines.size() <= 1) // ignore the file, if only headers are present
+			return new ArrayList<>();
 
-		for (AnnotatedElement method : elements)
-		{
-			Column[] annotationsByType = method.getAnnotationsByType(Column.class);
-			if (annotationsByType.length == 0)
-				continue;
-			for (Column column : annotationsByType)
-			{
-				name.putIfAbsent(column.id(), column.value());
-				// if (column.index())
-				// 	index.putIfAbsent(column.id(), column.value());
-			}
-		}
-
-		// List<String> indexes = index.entrySet().stream().sorted(Comparator.comparingInt(Map.Entry::getKey)).map(Map.Entry::getValue).toList();
-		return name.entrySet().stream().sorted(Comparator.comparingInt(Map.Entry::getKey)).map(Map.Entry::getValue).toList();
-	}
-
-	// public record ModelMetadata(String header, String index){}
-
-	public static <T> List<T> load(String filePath, String separator, Class<T> type, IndexStrategy<T> indexer) throws Exception
-	{
-		List<String> lines;
-		try
-		{
-			lines = Files.readAllLines(Paths.get(filePath), Charset.defaultCharset());
-			if (lines.isEmpty())
-				return new ArrayList<>();
-		}
-		catch (IOException e)
-		{
-			e.printStackTrace(System.err);
-			return new ArrayList<>(); /// maybe file does not exists
-		}
-
+		// * Read Headers
 		String[] headers = lines.get(0).split(separator);
 		Map<String, Integer> headerMap = new HashMap<>();
 		for (int i = 0; i < headers.length; i++)
-		{
 			headerMap.put(headers[i].trim(), i);
-		}
 
-		// Option 1: Records
-		// Option 2: General Class
+		// Option 1: T is a Record -> RecordComponents are also a Constuctor
+		// Option 2: T is a General Class -> Constructor need the Paramters to have also these Annotation
 
-		Constructor<?> constructor = type.getConstructors()[0];
+		Constructor<T> constructor = (Constructor<T>) type.getConstructors()[0];
 		Parameter[] parameters = constructor.getParameters();
 
 		List<T> records = new ArrayList<>();
@@ -99,18 +78,20 @@ public final class CsvUtils
 
 			for (int p = 0; p < parameters.length; p++)
 			{
-				var annotation = parameters[p].getAnnotation(Column.class); // ignore Id for now
-				if (annotation == null)
+				var annotation = parameters[p].getAnnotation(Column.class); // todo - in the future the #id could be used
+				if (annotation != null)
 				{
-					System.err.println("[Error] can not find annotation for "+parameters[p]);
-					args[p] = null;
-				} else {
 					String colName = annotation.value();
 					Integer colIdx = headerMap.get(colName);
 					args[p] = (colIdx != null && colIdx < fields.length) ? fields[colIdx].trim() : "";
 				}
+				else
+				{
+					Output.verbose("[WARN] Parameter " + parameters[p] + " for constructor of class " + type.getName() + " has no Column annotation!");
+					args[p] = null;
+				}
 			}
-			records.add((T) constructor.newInstance(args));
+			records.add(constructor.newInstance(args));
 		}
 
 		if (indexer != null)
@@ -119,13 +100,26 @@ public final class CsvUtils
 		return records;
 	}
 
-	public static <T> void store(String filePath, String separator, Class<T> type, Collection<T> records) throws Exception
+	/**
+	 * @param filePath path to CSV file
+	 * @param separator column seperator
+	 * @param type Output Type
+	 * @param records &lt;out&gt; collection of storable entries
+	 * @param <T> type of Storing Entries
+	 * @throws IOException thrown, when issues with the database file arise
+	 * @throws NoSuchMethodException thrown, when no {@link Column} annotated method or entry was found
+	 * @throws InvocationTargetException thrown, if issues arise when executing getters of 'T'
+	 * @throws IllegalAccessException thrown, if getters are annotated with {@link Column} but are <u><b>non public</b></u>
+	 */
+	public static <T> void store(String filePath, String separator, Class<T> type, Collection<T> records)
+			throws IOException, NoSuchMethodException, InvocationTargetException, IllegalAccessException
 	{
-		// Option 1: Records
+		// Option 1: T is a Record -> use RecordComponents
 
 		Method[] fields = null;
 		RecordComponent[] recordComponents = type.getRecordComponents();
-		if (recordComponents != null && recordComponents.length > 0) {
+		if (recordComponents != null && recordComponents.length > 0)
+		{
 			fields = new Method[recordComponents.length];
 			for (int i = 0; i < recordComponents.length; i++)
 			{
@@ -133,7 +127,7 @@ public final class CsvUtils
 			}
 		}
 
-		// Option 2: Method
+		// Option 2: T is a General Class -> use Methods
 		if (fields == null)
 		{
 			Method[] methods = type.getMethods();
@@ -157,13 +151,13 @@ public final class CsvUtils
 		{
 			Column ann = rc.getAnnotation(Column.class);
 
-			if (ann == null)
+			if (ann != null)
 			{
-				System.err.println("[ERROR] Can not find Annotation Element for : " + rc);
+				headerJoiner.add(ann.value());
 			}
 			else
 			{
-				headerJoiner.add(ann.value());
+				throw new NoSuchMethodException("@Column annotation is not present for " + type.getName() + "#" + rc.getName());
 			}
 		}
 

@@ -1,16 +1,16 @@
 package ch.ensnert.api.database;
 
-import ch.ensnert.api.database.csv.CsvUtils;
-
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
 
+/**
+ * created with AI
+ * @param <T>
+ */
 public abstract class Database<T>
 {
-	// private static Map<Class<?>, Database<?>> INSTANCES = new HashMap<Class<?>, Database<?>>();
-
 	protected final Class<T> type;
 	protected final List<T> storage = new ArrayList<>();
 	protected IndexStrategy<T> indexStrategy = null;
@@ -19,36 +19,41 @@ public abstract class Database<T>
 	{
 		this.type = type;
 		this.indexStrategy = strategy;
-		// INSTANCES.put(type, this);
 	}
 
-	// Erlaubt das Austauschen der Index-Logik zur Laufzeit
 	public void setIndexStrategy(IndexStrategy<T> strategy)
 	{
 		this.indexStrategy = strategy;
-		this.indexStrategy.rebuildIndex(storage);
+		if (indexStrategy != null)
+			this.indexStrategy.rebuildIndex(storage);
 	}
-
 
 	public String createKey(T record)
 	{
+		if (indexStrategy == null)
+			return null;
 		return indexStrategy.createKey(record);
 	}
 
 	public boolean hasKey(String key)
 	{
+		if (indexStrategy == null)
+			return false;
 		return indexStrategy.hasKey(key);
 	}
 
 	public List<T> getByKey(String key)
 	{
+		if (indexStrategy == null)
+			return new ArrayList<>();
 		return indexStrategy.getByKey(key);
 	}
 
 	public void batchInsert(Collection<T> newRecords)
 	{
 		storage.addAll(newRecords);
-		indexStrategy.rebuildIndex(storage); // Aktualisiert den Index
+		if (indexStrategy != null)
+			indexStrategy.rebuildIndex(storage);
 	}
 
 	public List<T> cloneData()
