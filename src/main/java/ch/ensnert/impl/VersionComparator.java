@@ -5,14 +5,24 @@ import org.eclipse.aether.version.InvalidVersionSpecificationException;
 import org.eclipse.aether.version.Version;
 import org.eclipse.aether.version.VersionRange;
 
+import java.util.Comparator;
+
 
 /**
  * @author ensnerT (2026) - no AI was used
  */
+@SuppressWarnings("unused")
 public final class VersionComparator
 {
-	VersionComparator()
+	private static final Comparator<String> COMPARATOR = Comparator.nullsFirst(Comparator.comparing(VersionComparator::parseVersion, Comparator.nullsFirst(Version::compareTo)));
+
+	private VersionComparator()
 	{
+	}
+
+	public static Comparator<String> getComparator()
+	{
+		return COMPARATOR;
 	}
 
 	private static final GenericVersionScheme genericVersionScheme = new GenericVersionScheme();
@@ -65,31 +75,31 @@ public final class VersionComparator
 
 	public static boolean isSame(String base, String version)
 	{
-		return parseVersion(base).compareTo(parseVersion(version)) == 0;
+		return COMPARATOR.compare(base, version) == 0;
 	}
 
 	public static boolean isSameOrNewer(String base, String version)
 	{
-		return parseVersion(base).compareTo(parseVersion(version)) <= 0;
+		return COMPARATOR.compare(base, version) <= 0;
 	}
 
 	public static boolean isNewer(String base, String version)
 	{
-		return parseVersion(base).compareTo(parseVersion(version)) < 0;
+		return COMPARATOR.compare(base, version) < 0;
 	}
 
 	public static boolean isSameOrOlder(String base, String version)
 	{
-		return parseVersion(base).compareTo(parseVersion(version)) >= 0;
+		return COMPARATOR.compare(base, version) >= 0;
 	}
 
 	public static boolean isOlder(String base, String version)
 	{
-		return parseVersion(base).compareTo(parseVersion(version)) > 0;
+		return COMPARATOR.compare(base, version) > 0;
 	}
 
 	public static int compare(String base, String version)
 	{
-		return parseVersion(base).compareTo(parseVersion(version));
+		return COMPARATOR.compare(base, version);
 	}
 }

@@ -10,6 +10,7 @@ import java.util.StringJoiner;
 /**
  * @author ensnerT (2025)
  */
+@SuppressWarnings("unused")
 public final class Table
 {
 	private static String getColor(String a)
@@ -23,7 +24,7 @@ public final class Table
 	}
 
 	int colNumbers = 1;
-	boolean hasHeader = false;
+	// boolean hasHeader = false;
 	Col name = null;
 	LinkedList<Row> rows = new LinkedList<>();
 
@@ -36,20 +37,18 @@ public final class Table
 		this.setColSize(colNumbers);
 	}
 
-	public Table setName(Col name)
+	public void setName(Col name)
 	{
 		this.name = name;
-		return this;
 	}
 
-	public Table setColSize(int number)
+	public void setColSize(int number)
 	{
 		if (number < 1)
 		{
 			throw new java.lang.IllegalArgumentException("Size can not be less than 1");
 		}
 		this.colNumbers = number;
-		return this;
 	}
 
 	public Table addCol(String value)
@@ -88,23 +87,19 @@ public final class Table
 		}
 	}
 
-	public Table endRow()
+	public void endRow()
 	{
 		int rownum = this.rows.size() - 1;
 		if (rownum >= 0)
 		{
 			Row row = this.rows.get(rownum);
 			if (row != null && row.size() < this.colNumbers)
-			{
 				for (int i = row.size(); i < this.colNumbers; i++)
-				{
-					row.add("");
-				}
-			}
+					row.addEmptyCell();
 		}
-		return this;
 	}
 
+	@SuppressWarnings({ "UnnecessaryUnicodeEscape" })
 	public static class TableConfig
 	{
 		public String render(Table t, OutlineType chosen)
@@ -130,9 +125,9 @@ public final class Table
 
 				joiner = new StringJoiner(mapping.get(Directions.from(Directions.RIGHT, Directions.LEFT)));
 
-				for (int i = 0; i < colSizes.length; i++)
+				for (int colSize : colSizes)
 				{
-					joiner.add(mapping.get(Directions.from(Directions.RIGHT, Directions.LEFT)).repeat(colSizes[i]));
+					joiner.add(mapping.get(Directions.from(Directions.RIGHT, Directions.LEFT)).repeat(colSize));
 				}
 				sb.append(joiner);
 
@@ -148,9 +143,9 @@ public final class Table
 
 				int totalColSize = 0;
 				int i1 = chosen.columns ? mapping.getOrDefault(Directions.from(Directions.TOP, Directions.BOTTOM), " ").length() : 1;
-				for (int i = 0; i < colSizes.length; i++)
+				for (int colSize : colSizes)
 				{
-					totalColSize += colSizes[i];
+					totalColSize += colSize;
 				}
 				totalColSize = totalColSize + (i1 * Math.max(0, colSizes.length - 1));
 
@@ -177,9 +172,9 @@ public final class Table
 															  Directions.from(Directions.RIGHT, Directions.BOTTOM, Directions.LEFT) :
 															  Directions.from(Directions.RIGHT, Directions.LEFT)));
 
-				for (int i = 0; i < colSizes.length; i++)
+				for (int colSize : colSizes)
 				{
-					joiner.add(mapping.get(Directions.from(Directions.RIGHT, Directions.LEFT)).repeat(colSizes[i]));
+					joiner.add(mapping.get(Directions.from(Directions.RIGHT, Directions.LEFT)).repeat(colSize));
 				}
 				sb.append(joiner);
 
@@ -216,9 +211,9 @@ public final class Table
 														  " ") :
 												  " ");
 
-				for (int i = 0; i < colSizes.length; i++)
+				for (int colSize : colSizes)
 				{
-					joiner.add(mapping.getOrDefault(Directions.from(Directions.RIGHT, Directions.LEFT), " ").repeat(colSizes[i]));
+					joiner.add(mapping.getOrDefault(Directions.from(Directions.RIGHT, Directions.LEFT), " ").repeat(colSize));
 				}
 				sb.append(joiner);
 
@@ -256,9 +251,9 @@ public final class Table
 															  Directions.from(Directions.TOP, Directions.RIGHT, Directions.LEFT) :
 															  Directions.from(Directions.RIGHT, Directions.LEFT)));
 
-				for (int i = 0; i < colSizes.length; i++)
+				for (int colSize : colSizes)
 				{
-					joiner.add(mapping.get(Directions.from(Directions.RIGHT, Directions.LEFT)).repeat(colSizes[i]));
+					joiner.add(mapping.get(Directions.from(Directions.RIGHT, Directions.LEFT)).repeat(colSize));
 				}
 				sb.append(joiner);
 
@@ -268,14 +263,14 @@ public final class Table
 			return sb.toString();
 		}
 
-		boolean bordered = false;
+		boolean bordered;
 
 		enum Directions
 		{
-			TOP(1 << 0),
-			BOTTOM(1 << 1),
-			LEFT(1 << 2),
-			RIGHT(1 << 3);
+			TOP(1),
+			BOTTOM(2),
+			LEFT(4),
+			RIGHT(8);
 
 			final int i;
 
@@ -302,9 +297,9 @@ public final class Table
 			HEADER_COLUMNS(false, true, true),
 			FULL(true, true, true);
 
-			boolean outside = false;
-			boolean header = false;
-			boolean columns = false;
+			final boolean outside;
+			final boolean header;
+			final boolean columns;
 
 			OutlineType(boolean outside, boolean header, boolean columns)
 			{
@@ -313,7 +308,7 @@ public final class Table
 				this.columns = columns;
 			}
 
-			static OutlineType[] ALL = OutlineType.values();
+			static final OutlineType[] ALL = OutlineType.values();
 		}
 
 		private static TableConfig NO_LINES;
@@ -460,9 +455,9 @@ public final class Table
 			return i;
 		}
 
-		void add(String value)
+		void addEmptyCell()
 		{
-			this.cols.add(Col.of(value));
+			this.cols.add(Col.of(""));
 		}
 
 		void add(Col value)
@@ -543,6 +538,7 @@ public final class Table
 		}
 	}
 
+	@SuppressWarnings({"unused"})
 	public static class ColoredCol extends Col
 	{
 		String color;
@@ -587,6 +583,6 @@ public final class Table
 	{
 		LEFT,
 		CENTER,
-		RIGHT;
+		RIGHT
 	}
 }

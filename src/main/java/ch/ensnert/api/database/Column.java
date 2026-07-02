@@ -17,5 +17,6 @@ public @interface Column
 
 	int id() default -1;
 
+	@SuppressWarnings({"unused", "UnusedReturnValue"}) // reason: future proof
 	boolean index() default false;
 }

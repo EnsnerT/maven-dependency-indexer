@@ -27,7 +27,7 @@ import java.util.StringJoiner;
 
 public final class CsvUtils
 {
-	CsvUtils()
+	private CsvUtils()
 	{
 	}
 
@@ -163,7 +163,7 @@ public final class CsvUtils
 
 		try (PrintWriter writer = new PrintWriter(new FileWriter(filePath, false)))
 		{
-			writer.println(headerJoiner.toString());
+			writer.println(headerJoiner);
 			for (T record : records)
 			{
 				StringJoiner rowJoiner = new StringJoiner(separator);
@@ -173,7 +173,7 @@ public final class CsvUtils
 
 					rowJoiner.add(val == null ? "" : val.toString());
 				}
-				writer.println(rowJoiner.toString());
+				writer.println(rowJoiner);
 			}
 		}
 	}

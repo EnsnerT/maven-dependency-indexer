@@ -33,7 +33,6 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -50,6 +49,7 @@ import java.util.regex.Pattern;
 public final class Pom
 {
 	private final Holder holder;
+	@SuppressWarnings({ "FieldMayBeFinal" }) // because the artifact may change in the future
 	private Artifact artifact;
 	private Model model;
 	private DependencyData artifactId;
@@ -93,6 +93,7 @@ public final class Pom
 
 	// region Constructors
 
+	@SuppressWarnings("unused") // might be of use for later as "POM-Scanning"
 	public Pom(Holder holder, Artifact artifact)
 	{
 		this.holder = holder;
@@ -144,16 +145,6 @@ public final class Pom
 	public Optional<String> version()
 	{
 		return Optional.ofNullable(getVersion());
-	}
-
-	public String getBaseVersion()
-	{
-		return artifact.getBaseVersion();
-	}
-
-	public boolean isSnapshot()
-	{
-		return artifact.isSnapshot();
 	}
 
 	public String getClassifier()
@@ -271,7 +262,7 @@ public final class Pom
 		return this.model;
 	}
 
-	@SuppressWarnings("unused") // intended for future ; incomplete
+	@SuppressWarnings({ "unused", "all" }) // intended for future ; incomplete
 	public HashMap<Version, Model> resolveVersionRangeOffline()
 	{
 		List<String> versions = findVersions(true, false);
@@ -314,6 +305,7 @@ public final class Pom
 		}
 	}
 
+	@SuppressWarnings("unused") // not used for now, used later.
 	private List<String> findVersions()
 	{
 		if (this.artifactVersions == null)
@@ -353,7 +345,7 @@ public final class Pom
 
 			if (results == null || results.isEmpty())
 			{
-				Output.error("No metadata found for:" + metadataRequest.toString());
+				Output.error("No metadata found for:" + metadataRequest);
 				return new ArrayList<>();
 			}
 
@@ -381,7 +373,7 @@ public final class Pom
 
 			storeKey_artifactVersions = new Index(release, snapshot);
 			artifactVersions = new ArrayList<>(versions);
-			artifactVersions.sort(Comparator.comparing(VersionComparator::parseVersion));
+			artifactVersions.sort(VersionComparator.getComparator());
 		}
 		return artifactVersions;
 	}

@@ -9,11 +9,12 @@ import java.util.List;
  * created with AI
  * @param <T>
  */
+@SuppressWarnings("unused")
 public abstract class Database<T>
 {
 	protected final Class<T> type;
 	protected final List<T> storage = new ArrayList<>();
-	protected IndexStrategy<T> indexStrategy = null;
+	protected IndexStrategy<T> indexStrategy;
 
 	public Database(Class<T> type, IndexStrategy<T> strategy)
 	{

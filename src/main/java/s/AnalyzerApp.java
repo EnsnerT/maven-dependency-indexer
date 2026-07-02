@@ -1,18 +1,17 @@
 package s;
 
 import ch.ensnert.App;
-import ch.ensnert.api.database.Database;
+import ch.ensnert.api.Matrix;
+import ch.ensnert.api.Table;
 import ch.ensnert.api.database.csv.CsvDatabase;
 import ch.ensnert.impl.ArtifactVersionMatrix;
 import ch.ensnert.impl.Output;
+import ch.ensnert.impl.Pom;
+import ch.ensnert.impl.data.AnalyzedVersion;
 import ch.ensnert.impl.data.LinkKey;
 import ch.ensnert.impl.database.indexstrategies.MavenCoordinateIndex;
 import ch.ensnert.impl.database.types.DependencyData;
-import ch.ensnert.impl.data.AnalyzedVersion;
 import ch.ensnert.system.Holder;
-import ch.ensnert.api.Index;
-import ch.ensnert.impl.Pom;
-import ch.ensnert.api.Table;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.model.Model;
 
@@ -22,12 +21,10 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.StringJoiner;
 
 
 /**
@@ -56,7 +53,7 @@ public final class AnalyzerApp implements App
 	public static final class Params
 	{
 		public Mode mode;
-		public ArrayList<String> coordinates = new ArrayList<>();
+		public final ArrayList<String> coordinates = new ArrayList<>();
 		public boolean moreThenNEntries;
 		public boolean version_newer;
 		public boolean version_older;
@@ -99,7 +96,7 @@ public final class AnalyzerApp implements App
 			this.holder = holder;
 	}
 
-	@SuppressWarnings("SuspiciousListRemoveInLoop")
+	@SuppressWarnings({ "SuspiciousListRemoveInLoop", "RedundantCollectionOperation" })
 	@Override
 	public void run(String[] args)
 	{
@@ -214,26 +211,11 @@ public final class AnalyzerApp implements App
 
 		switch (runningParameter.mode)
 		{
-			case HELP ->
-			{
-				command_help(runningParameter);
-			}
-			case INDEX ->
-			{
-				command_index(runningParameter);
-			}
-			case VERSION ->
-			{
-				command_version(runningParameter);
-			}
-			case RANGE ->
-			{
-				command_range(runningParameter);
-			}
-			case FIND ->
-			{
-				command_find(runningParameter);
-			}
+			case HELP -> command_help(runningParameter);
+			case INDEX -> command_index(runningParameter);
+			case VERSION -> command_version(runningParameter);
+			case RANGE -> command_range(runningParameter);
+			case FIND -> command_find(runningParameter);
 		}
 
 	}
@@ -325,18 +307,10 @@ public final class AnalyzerApp implements App
 
 				for (AnalyzedVersion fv : filteredVersions)
 				{
-					StringJoiner sj = new StringJoiner(", ");
-					if (fv.isCurrent())
-						sj.add("current");
-					if (fv.isRecommended())
-						sj.add("last patch");
-					if (fv.isSnapshot() && runningParameter.version_release && runningParameter.version_snapshot)
-						sj.add("snapshot");
-					if (fv.isLatest())
-						sj.add("latest");
+					String sj = fv.getAnnotations();
 
-					if (sj.length() > 0)
-						Output.generic(" - Indexing : " + fv.version() + " (" + sj.toString() + ")");
+					if (!sj.isEmpty())
+						Output.generic(" - Indexing : " + fv.version() + " (" + sj + ")");
 					else
 						Output.generic(" - Indexing : " + fv.version());
 
@@ -387,22 +361,13 @@ public final class AnalyzerApp implements App
 
 			for (AnalyzedVersion fv : filteredVersions)
 			{
-				StringJoiner sj = new StringJoiner(", ");
-				if (fv.isCurrent())
-					sj.add("current");
-				if (fv.isRecommended())
-					sj.add("last patch");
-				if (fv.isSnapshot() && runningParameter.version_release && runningParameter.version_snapshot)
-					sj.add("snapshot");
-				if (fv.isLatest())
-					sj.add("latest");
+				String sj = fv.getAnnotations();
 
-				if (sj.length() > 0)
-					Output.generic(" - " + fv.version() + " (" + sj.toString() + ")");
+				if (!sj.isEmpty())
+					Output.generic(" - " + fv.version() + " (" + sj + ")");
 				else
 					Output.generic(" - " + fv.version());
 			}
-
 		}
 		catch (Exception e)
 		{
@@ -410,6 +375,7 @@ public final class AnalyzerApp implements App
 		}
 	}
 
+	@SuppressWarnings({"UnusedParameters"})
 	public void command_range(Params runningParameter)
 	{
 		throw new UnsupportedOperationException("Command not yet implemented");
@@ -422,42 +388,58 @@ public final class AnalyzerApp implements App
 			Table tableSimpleLookup = new Table(4);
 			tableSimpleLookup.addCol("Artifact").addCol("Version").addCol("Dependency").addCol("Version").endRow();
 
+			Set<String> originalArguments = new HashSet<>(Set.of(runningParameter.originalArguments));
+			originalArguments.retainAll(List.of("--no-test", "-T"));
+			boolean hideTest = !originalArguments.isEmpty();
+
 			// if you find 1; show exactly this entry
 			try
 			{
 				database_init();
 
 				List<DependencyData> dataList = db.cloneData();
+				Set<String> ignoredScopes = Set.of("test");
 
 				Result result = searchDependencies(runningParameter.coordinates.get(0), dataList);
 
 				for (DependencyData data : result.matchingAsArtifact())
 				{
+					boolean isTest = ignoredScopes.contains(data.depScope());
+					if (isTest && hideTest)
+						continue;
+
+					String value = data.groupId() + ":" + data.artifactId();
 					if (runningParameter.table_nocolor)
 					{
-						tableSimpleLookup.addCol(data.groupId() + ":" + data.artifactId());
+						tableSimpleLookup.addCol(value);
 						tableSimpleLookup.addCol(data.version());
 					}
 					else
 					{
-						tableSimpleLookup.addCol(Table.ColoredCol.of(data.groupId() + ":" + data.artifactId(), Table.ColoredCol.LIGHT_YELLOW));
+						tableSimpleLookup.addCol(Table.ColoredCol.of(value, Table.ColoredCol.LIGHT_YELLOW));
 						tableSimpleLookup.addCol(Table.ColoredCol.of(data.version(), Table.ColoredCol.LIGHT_YELLOW));
 					}
 
-					tableSimpleLookup.addCol(data.depGroupId() + ":" + data.depArtifactId()).addCol(data.depVersion()).endRow();
+					String depValue = data.depGroupId() + ":" + data.depArtifactId() + (isTest ? " (" + data.depScope() + ")" : "");
+					tableSimpleLookup.addCol(depValue).addCol(data.depVersion()).endRow();
 				}
 				for (DependencyData data : result.matchingAsDependency())
 				{
+					boolean isTest = ignoredScopes.contains(data.depScope());
+					if (isTest && hideTest)
+						continue;
+
 					tableSimpleLookup.addCol(data.groupId() + ":" + data.artifactId()).addCol(data.version());
 
+					String value = data.depGroupId() + ":" + data.depArtifactId() + (isTest ? " (" + data.depScope() + ")" : "");
 					if (runningParameter.table_nocolor)
 					{
-						tableSimpleLookup.addCol(data.depGroupId() + ":" + data.depArtifactId());
+						tableSimpleLookup.addCol(value);
 						tableSimpleLookup.addCol(data.depVersion());
 					}
 					else
 					{
-						tableSimpleLookup.addCol(Table.ColoredCol.of(data.depGroupId() + ":" + data.depArtifactId(), Table.ColoredCol.LIGHT_YELLOW));
+						tableSimpleLookup.addCol(Table.ColoredCol.of(value, Table.ColoredCol.LIGHT_YELLOW));
 						tableSimpleLookup.addCol(Table.ColoredCol.of(data.depVersion(), Table.ColoredCol.LIGHT_YELLOW));
 					}
 					tableSimpleLookup.endRow();
@@ -482,11 +464,14 @@ public final class AnalyzerApp implements App
 			}
 
 			/// Set{ Index { artifact, dependency } }
-			HashSet<Index> relations = new HashSet<>();
+			// HashSet<Index> relations = new HashSet<>();
 
-			ArtifactVersionMatrix matrix = new ArtifactVersionMatrix();
+			Matrix matrix = new ArtifactVersionMatrix();
 
-			matrix.addNodes(runningParameter.coordinates.toArray(new String[0])); /// to keep the order.
+			// 2. add coordinates to keep the order
+			matrix.addNodes(new ArrayList<>(runningParameter.coordinates).stream()
+									.map(a -> String.join(":", Arrays.copyOfRange(a.split(":"), 0, 2)))
+									.toArray(String[]::new));
 
 			try
 			{
@@ -499,8 +484,6 @@ public final class AnalyzerApp implements App
 				// 1. search for coordinate 1
 				// 2. search in the merged list for coordinate [!1]
 				// 3. all matches are end results and are recorded!
-
-				HashMap<String, Result> mapResult = new HashMap<>();
 
 				for (String coordinateA : runningParameter.coordinates)
 				{
@@ -608,9 +591,9 @@ public final class AnalyzerApp implements App
 			render = render.substring(0, render.length() - 1);
 
 		if (isGeneric)
-			Output.verbose(render);
-		else
 			Output.generic(render);
+		else
+			Output.verbose(render);
 	}
 
 	private static void printResult(Result value, Params runningParameter)
@@ -653,21 +636,21 @@ public final class AnalyzerApp implements App
 		String groupId = pom.getGroupId();
 		String artifactId = pom.getArtifactId();
 		Optional<String> version = pom.version();
-		String type = pom.getExtension();
-		String classifier = pom.getClassifier();
+		// String type = pom.getExtension();
+		// String classifier = pom.getClassifier();
 
 		List<DependencyData> matchingAsArtifact = new ArrayList<>();
 		List<DependencyData> matchingAsDependency = new ArrayList<>();
 
 		for (DependencyData data : dataList)
 		{
-			// if (!groupId.equalsIgnoreCase(data.groupId()) && !groupId.equalsIgnoreCase(data.depGroupId()))
+			if (data.depType().equals("test-jar")) // remove all test-jars
+				continue;
 			if (!groupId.equals("*") && !groupId.equalsIgnoreCase(data.groupId()) && !groupId.equalsIgnoreCase(data.depGroupId()))
 				continue;
 			if (!artifactId.equalsIgnoreCase(data.artifactId()) && !artifactId.equalsIgnoreCase(data.depArtifactId()))
 				continue;
 
-			// if ((groupId.equalsIgnoreCase(data.groupId())) && artifactId.equalsIgnoreCase(data.artifactId()))
 			if ((groupId.equals("*") || groupId.equalsIgnoreCase(data.groupId())) && artifactId.equalsIgnoreCase(data.artifactId()))
 			{
 				// main
@@ -681,7 +664,6 @@ public final class AnalyzerApp implements App
 
 				matchingAsArtifact.add(data);
 			}
-			// else if ((groupId.equalsIgnoreCase(data.depGroupId())) && artifactId.equalsIgnoreCase(data.depArtifactId()))
 			else if ((groupId.equals("*") || groupId.equalsIgnoreCase(data.depGroupId())) && artifactId.equalsIgnoreCase(data.depArtifactId()))
 			{
 				// dependency
@@ -698,8 +680,6 @@ public final class AnalyzerApp implements App
 				// 	continue;
 				matchingAsDependency.add(data);
 			}
-			else
-				continue;
 		}
 		ArrayList<DependencyData> allMatchings = new ArrayList<>(matchingAsArtifact);
 		allMatchings.addAll(matchingAsDependency);

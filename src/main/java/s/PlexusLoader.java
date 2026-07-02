@@ -31,6 +31,13 @@ public final class PlexusLoader
 	public static void main(String[] args) throws ComponentLookupException, PlexusContainerException, IOException
 	{
 		setupLogging();
+
+		if (args.length > 0 && args[0].equals("test")){
+			Test.main(args);
+
+			return;
+		}
+
 		var ref = new Object()
 		{
 			ComponentLookupException error = null;
@@ -63,6 +70,7 @@ public final class PlexusLoader
 		return getContainer().lookup(App.class);
 	}
 
+	@SuppressWarnings("resource")
 	public static void setupPlexus(Runnable then) throws IOException, PlexusContainerException
 	{
 		if (classWorld == null)
@@ -96,7 +104,7 @@ public final class PlexusLoader
 					}
 				});
 
-				container.setLookupRealm((ClassRealm) null);
+				container.setLookupRealm(null);
 
 				Thread.currentThread().setContextClassLoader(container.getContainerRealm()); // replace current class loader with the new instance
 

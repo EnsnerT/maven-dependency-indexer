@@ -4,6 +4,7 @@ import java.io.OutputStream;
 import java.io.PrintStream;
 
 
+@SuppressWarnings("unused")
 public final class Output
 {
 	public static final PrintStream NULL_WRITER = new PrintStream(OutputStream.nullOutputStream());
@@ -51,7 +52,8 @@ public final class Output
 	// region Loggers
 	public static void verbose(String message)
 	{
-		out.println(message);
+		if (isVerbose())
+			out.println(message);
 	}
 
 	public static void verbose(String format, Object... args)
@@ -61,7 +63,8 @@ public final class Output
 
 	public static void generic(String message)
 	{
-		out.println(message);
+		if (isGeneric())
+			out.println(message);
 	}
 
 	public static void generic(String format, Object... args)
