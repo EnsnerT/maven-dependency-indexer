@@ -16,8 +16,10 @@ import org.apache.maven.model.building.ModelBuildingRequest;
 import org.codehaus.plexus.util.ReaderFactory;
 import org.codehaus.plexus.util.xml.XmlStreamReader;
 import org.codehaus.plexus.util.xml.pull.XmlPullParserException;
+import org.eclipse.aether.installation.InstallRequest;
 import org.eclipse.aether.metadata.DefaultMetadata;
 import org.eclipse.aether.metadata.Metadata;
+import org.eclipse.aether.repository.LocalArtifactRequest;
 import org.eclipse.aether.resolution.ArtifactRequest;
 import org.eclipse.aether.resolution.ArtifactResolutionException;
 import org.eclipse.aether.resolution.ArtifactResult;
@@ -399,5 +401,29 @@ public final class Pom
 		}
 
 		return analyzedVersions;
+	}
+
+	public void installVersion(){
+		InstallRequest installRequest = new InstallRequest();
+		org.eclipse.aether.artifact.DefaultArtifact jar = new org.eclipse.aether.artifact.DefaultArtifact(getGroupId(), getArtifactId(), getClassifier(), "jar",
+				getVersion());
+		installRequest.addArtifact(jar);
+		// holder.getRepositorySystem().install(holder.getRepositorySystemSession(), installRequest);
+
+		ArtifactResult artifactResult = null;
+		LocalArtifactRequest localArtifactRequest = new LocalArtifactRequest();
+		try
+		{
+			artifactResult = holder.getRepositorySystem()
+													.resolveArtifact(holder.getRepositorySystemSession(),
+															new ArtifactRequest(jar, holder.getRemoteRepositories(), null));
+		}
+		catch (ArtifactResolutionException e)
+		{
+			throw new RuntimeException(e);
+		}
+
+		artifactResult.isResolved();
+		boolean isDownloaded = artifactResult.getLocalArtifactResult().getFile() != null;
 	}
 }

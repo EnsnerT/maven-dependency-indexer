@@ -77,6 +77,7 @@ public final class AnalyzerApp implements App
 			this.table_nocolor = false;
 		}
 
+		// todo -> this could be modified to contain the command resolvers.
 		public enum Mode
 		{
 			HELP,
@@ -136,6 +137,7 @@ public final class AnalyzerApp implements App
 			while (i < args.length)
 			{
 				String arg = args[i++];
+				// todo -> this could be modified to work with switch cases.
 				if (Set.of("help", "-h", "--help", "-?").contains(arg))
 				{
 					command_help(runningParameter);
@@ -234,8 +236,8 @@ public final class AnalyzerApp implements App
 			Output.generic("\trange -h | range help | * resolve and index a range of versions for an artifact");
 			Output.generic("\tfind -h | find help | * scrape your indexed database to create a Version matrix");
 			Output.generic("Generic Paramters: ");
+			Output.generic("\t-v / --verbose | * Output more Context (or more help)");
 			Output.generic("\t-t / --tab | * change the Table's formats to '\\t' separated");
-			Output.generic("\t-v / --verbose | * Output more Context");
 			Output.generic("\t-c / --no-color / --no-colour | * prevent colorfull Output");
 		}
 		if (runningParameter.mode == Params.Mode.INDEX)
@@ -248,7 +250,7 @@ public final class AnalyzerApp implements App
 			Output.generic("\tindex {artifact+version} --release / --releases / -r | include release versions (only with -s -r)");
 			Output.generic("\t * you could remember the arguments as \"sonar\" Shapshot, Old, New, All, Release");
 			Output.generic("\tindex {artifact+version} {...} version {...} | will turn the command from an 'index' to an 'version'.");
-			Output.generic("Formats:");
+			Output.generic("Formats: ");
 			Output.generic("\t{artifact} = {groupId}:{artifactId} - Example: 'com.any:alpha'");
 			Output.generic("\t{artifact+version} = {groupId}:{artifactId}:{version} - Example: 'com.any:alpha:1.0.0'");
 		}
@@ -263,7 +265,7 @@ public final class AnalyzerApp implements App
 			Output.generic("\tversion {artifact+version} --release / --releases / -r | include release versions (only with -s -r)");
 			Output.generic("\t * you could remember the arguments as \"sonar\" Shapshot, Old, New, All, Release");
 			Output.generic("\tversion {artifact+version} {...} index {...} | will turn the command from an 'version' to an 'index'.");
-			Output.generic("Formats:");
+			Output.generic("Formats: ");
 			Output.generic("\t{artifact} = {groupId}:{artifactId} - Example: 'com.any:alpha'");
 			Output.generic("\t{artifact+version} = {groupId}:{artifactId}:{version} - Example: 'com.any:alpha:1.0.0'");
 		}
@@ -279,10 +281,16 @@ public final class AnalyzerApp implements App
 			Output.generic("\tfind {artifact} {artifact} | show intersecting versions of given artifacts");
 			Output.generic("\tfind {artifact} {artifact} -a | show all versions of given artifacts");
 			Output.generic("\tfind {artifact} {artifact+version} -a | search for a specific version of an artifact");
-			Output.generic("Formats:");
+			Output.generic("Formats: ");
 			Output.generic("\t{artifact} = {groupId}:{artifactId} - Example: 'com.any:alpha'");
 			Output.generic("\t{artifact*} = *:{artifactId} - Example: '*:alpha'");
 			Output.generic("\t{artifact+version} = {groupId}:{artifactId}:{version} - Example: 'com.any:alpha:1.0.0'");
+			Output.generic("Filter Options: ");
+			Output.generic("\t-T | exclude \"test\" scopes");
+			Output.generic("\t-O | exclude optional dependencies");
+			Output.verbose("Verbose Outputs (only visible with \"-v\": ");
+			Output.verbose("\t---findings | output for each match, its complete found table [DEBUG] ");
+			Output.verbose("\t---bonds | outputs the found relations ");
 		}
 	}
 
@@ -383,14 +391,17 @@ public final class AnalyzerApp implements App
 
 	public void command_find(Params runningParameter)
 	{
+		Set<String> originalArguments = new HashSet<>(Set.of(runningParameter.originalArguments));
+		originalArguments.retainAll(List.of("--no-test", "-T"));
+		boolean hideTest = !originalArguments.isEmpty();
+		originalArguments = new HashSet<>(Set.of(runningParameter.originalArguments));
+		originalArguments.retainAll(List.of("--no-optional", "-O"));
+		boolean hideOptional = !originalArguments.isEmpty();
+
 		if (runningParameter.coordinates.size() == 1)
 		{
 			Table tableSimpleLookup = new Table(4);
 			tableSimpleLookup.addCol("Artifact").addCol("Version").addCol("Dependency").addCol("Version").endRow();
-
-			Set<String> originalArguments = new HashSet<>(Set.of(runningParameter.originalArguments));
-			originalArguments.retainAll(List.of("--no-test", "-T"));
-			boolean hideTest = !originalArguments.isEmpty();
 
 			// if you find 1; show exactly this entry
 			try
@@ -400,7 +411,7 @@ public final class AnalyzerApp implements App
 				List<DependencyData> dataList = db.cloneData();
 				Set<String> ignoredScopes = Set.of("test");
 
-				Result result = searchDependencies(runningParameter.coordinates.get(0), dataList);
+				Result result = searchDependencies(runningParameter.coordinates.get(0), dataList, hideTest, hideOptional);
 
 				for (DependencyData data : result.matchingAsArtifact())
 				{
@@ -487,7 +498,7 @@ public final class AnalyzerApp implements App
 
 				for (String coordinateA : runningParameter.coordinates)
 				{
-					Result resultsA = searchDependencies(coordinateA, dataList);
+					Result resultsA = searchDependencies(coordinateA, dataList, hideTest, hideOptional);
 
 					ArrayList<DependencyData> previewAllNodes = new ArrayList<>();
 					ArrayList<String> otherCoordinates = new ArrayList<>(runningParameter.coordinates);
@@ -495,7 +506,7 @@ public final class AnalyzerApp implements App
 
 					for (String coordinateB : otherCoordinates)
 					{
-						Result resultsB = searchDependencies(coordinateB, resultsA.allMatchings());
+						Result resultsB = searchDependencies(coordinateB, resultsA.allMatchings(), hideTest, hideOptional);
 
 						List<DependencyData> intersections = resultsB.allMatchings();
 						previewAllNodes.addAll(intersections);
@@ -511,11 +522,13 @@ public final class AnalyzerApp implements App
 					}
 
 					/// DEBUG : Preview All Dependencies
+					// region Findings '---findings -v'
 					if (Set.of(runningParameter.originalArguments).contains("---findings"))
 					{
 						Output.verbose(" - " + coordinateA + " has found:");
 						printResult(new Result(previewAllNodes, new ArrayList<>(), previewAllNodes), runningParameter);
 					}
+					// endregion Findings '---findings -v'
 				}
 
 				// region References ( Bonds ) '---bonds -v'
@@ -630,7 +643,7 @@ public final class AnalyzerApp implements App
 		}
 	}
 
-	private Result searchDependencies(String searchingCoordinate, List<DependencyData> dataList)
+	private Result searchDependencies(String searchingCoordinate, List<DependencyData> dataList, boolean hideTestScope, boolean hideOptional)
 	{
 		Pom pom = new Pom(holder, searchingCoordinate);
 		String groupId = pom.getGroupId();
@@ -649,6 +662,11 @@ public final class AnalyzerApp implements App
 			if (!groupId.equals("*") && !groupId.equalsIgnoreCase(data.groupId()) && !groupId.equalsIgnoreCase(data.depGroupId()))
 				continue;
 			if (!artifactId.equalsIgnoreCase(data.artifactId()) && !artifactId.equalsIgnoreCase(data.depArtifactId()))
+				continue;
+
+			if (hideTestScope && "test".equals(data.depScope()))
+				continue;
+			if (hideOptional && !data.depOptional().isEmpty() && Boolean.parseBoolean(data.depOptional()))
 				continue;
 
 			if ((groupId.equals("*") || groupId.equalsIgnoreCase(data.groupId())) && artifactId.equalsIgnoreCase(data.artifactId()))
