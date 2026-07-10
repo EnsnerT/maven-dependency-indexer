@@ -1,6 +1,7 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0">
     <modelVersion>4.0.0</modelVersion>
-    <groupId>ch.github.ensnert</groupId>
+
+    <groupId>com.github.ensnert</groupId>
     <artifactId>maven-dependency-indexer</artifactId>
     <version>1.0.0-SNAPSHOT</version>
 
@@ -16,15 +17,30 @@
 
     <developers>
         <developer>
-            <id>ensnerT</id>
-            <email>42667961+EnsnerT@users.noreply.github.com</email>
+            <id>EnsnerT</id>
+            <email>42667961+EnsnerT@users.noreply.github.com</email> <!-- it may be, that his mail address would not work -->
             <name>Ensner</name>
             <timezone>Europe/Zurich</timezone>
         </developer>
     </developers>
 
+    <licenses>
+        <!-- <license> -->
+        <!--     &lt;!&ndash; <name>Apache </name> &ndash;&gt; -->
+        <!-- </license> -->
+    </licenses>
+
     <build>
         <defaultGoal>clean package</defaultGoal>
+
+        <resources>
+            <resource>
+                <directory>.</directory>
+                <includes>
+                    <include>LICENSE</include>
+                </includes>
+            </resource>
+        </resources>
 
         <plugins>
             <plugin>
@@ -34,21 +50,83 @@
                 <configuration>
                     <archive>
                         <manifest>
-                            <mainClass>s.PlexusLoader</mainClass>
-
-                            <addClasspath>true</addClasspath>
-                            <classpathLayoutType>repository</classpathLayoutType>
-                            <!-- Use 'custom' if you need a specific path structure -->
-                            <!-- todo - this path only works for Windows... -->
-                            <classpathPrefix>/Users/${user.name}/.m2/repository/</classpathPrefix>
-                            <!-- <classpathPrefix>${user.home}/.m2/repository/</classpathPrefix> -->
+                            <mainClass>com.github.ensnert.starter.PlexusLoader</mainClass>
                         </manifest>
                     </archive>
                 </configuration>
             </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>license-maven-plugin</artifactId>
+                <version>2.7.1</version>
+            </plugin>
         </plugins>
-
     </build>
+
+    <profiles>
+        <profile>
+            <!--
+             Compile Application as Standalone (local only)
+             "mvn -Plocal" or "mvn -Dlocal" or "mvn -Dlocal=true"
+             -->
+            <id>local</id>
+            <activation>
+                <property>
+                    <name>local</name>
+                    <value>true</value>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-jar-plugin</artifactId>
+                        <version>3.4.2</version>
+                        <configuration>
+                            <archive combine.self="append">
+                                <manifest combine.self="append">
+                                    <addClasspath>true</addClasspath>
+
+                                    <classpathLayoutType>repository</classpathLayoutType>
+                                    <!-- Use 'custom' if you need a specific path structure -->
+                                    <classpathPrefix>file:///${settings.localRepository}</classpathPrefix>
+                                </manifest>
+                            </archive>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <profile>
+            <!--
+             Run Application with maven : "mvn -Prun -D"exec.args={your args}" or "mvn -Drun ..."
+             -->
+            <id>run</id>
+            <activation>
+                <property>
+                    <name>run</name>
+                    <value>true</value>
+                </property>
+            </activation>
+            <build>
+                <defaultGoal>exec:java</defaultGoal>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.3.0</version>
+                        <configuration>
+                            <mainClass>com.github.ensnert.starter.PlexusLoader</mainClass>
+                            <useMavenLogger>false</useMavenLogger>
+                            <!-- < -->
+                        </configuration>
+                    </plugin>
+                </plugins>
+
+            </build>
+        </profile>
+    </profiles>
 
     <dependencies>
         <!-- Maven Version : ${version.maven} -->

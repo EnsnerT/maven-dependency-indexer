@@ -22,7 +22,7 @@ It should also be able to create matrixies of versions.
 | `version`   | {artifact+?version}               | No              | Display the Versions (same as `index -v`)                                            |
 | `find`      | {A_artifact} {B_artifact+version} | Yes             | Search the Database for Artifact_B and return the Artifact_A which is dependent on B |
 | ~~`range`~~ | {artifact+version} {?version}     |                 | Index all Artifact within a specific range                                           |
-| ~~`test`~~  |                                   |                 | Run the `main(...)` in `s.Test`                                                      |
+| ~~`test`~~  |                                   |                 | Run the `main(...)` in `com.github.ensnert.starter.Test`                             |
 
 
 
@@ -123,3 +123,11 @@ Running the App, you may encounter some common Issues. Here is what happend and 
 - implement process housekeeping (keep informations between runs). 
   - for example, if a user indexes something, the next logical step will be viewing relations between versions using the `find` command.
   - loading and storing a lot of data comes at a cost. Housekeeping the database file is mandatory!
+
+## Maven Build
+- `mvn` run the build - jar only!
+- `mvn -Plocal` run it localy as .jar with local dependencies connected? build it with "-Plocal" or "-Dlocal" or "-Dlocal=true".
+- `mvn -Prun -q -D"exec.args={your arguments}"` run it with maven. Warning! Reduced performance, since maven needs to be run twice. 
+  - `-q` makes the output from maven disapear.
+  - `-Prun` or `-Drun` makes the profile active, to run the exec:java goal for the project, while maven resolves the dependencies to run the application by itself.
+  - `-D"exec.args=index -v help"` run the indexer with args : `index -v help`

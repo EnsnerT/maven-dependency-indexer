@@ -1,8 +1,11 @@
 # Runnable and Index
 *.csv
 *.bat
+/scripts/
 
 # Build Output
 /target/
+
+# Editor Directories
 /.idea/
 /.vscode/
